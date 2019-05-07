@@ -412,8 +412,19 @@ namespace NBitcoin
                 return lastBlock.Header.Bits;
             }
 
-            // Go back by what we want to be 14 days worth of blocks.
-            long pastHeight = lastBlock.Height - (difficultyAdjustmentInterval - 1);
+            long pastHeight = 0;
+            if (consensus.LitecoinWorkCalculation)
+            {
+                long blockstogoback = difficultyAdjustmentInterval - 1;
+                if ((lastBlock.Height + 1) != difficultyAdjustmentInterval)
+                    blockstogoback = difficultyAdjustmentInterval;
+                pastHeight = lastBlock.Height - blockstogoback;
+            }
+            else
+            {
+                // Go back by what we want to be 14 days worth of blocks.
+                pastHeight = lastBlock.Height - (difficultyAdjustmentInterval - 1);
+            }
 
             ChainedHeader firstChainedHeader = GetAncestor((int)pastHeight);
             if (firstChainedHeader == null)

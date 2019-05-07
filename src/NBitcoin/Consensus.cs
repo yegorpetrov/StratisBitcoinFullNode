@@ -98,6 +98,8 @@ namespace NBitcoin
         /// <inheritdoc />
         public List<IFullValidationConsensusRule> FullValidationRules { get; set; }
 
+        public bool LitecoinWorkCalculation { get; set; }
+
         public Consensus(
             ConsensusFactory consensusFactory,
             ConsensusOptions consensusOptions,

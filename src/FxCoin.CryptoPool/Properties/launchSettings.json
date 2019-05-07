@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "FxCoin.CryptoPool": {
+      "commandName": "Project",
+      "commandLineArgs": "-txindex=0 -connectionstring=\"Server=(localdb)\\MSSQLLocalDB;Database=WalletBtc1;MultipleActiveResultSets=true;Integrated Security=True\" -currency=bitcoin -testnet -apiport=27000 -server -rpcuser=rpc -rpcpassword=123"
+    }
+  }
+}
