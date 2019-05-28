@@ -122,6 +122,22 @@
             }
         }
 
+        public void WalletPassphraseChange(string oldPassphrase, string newPassphrase)
+        {
+            this.logger.LogTrace($"Account passphrase change requested");
+
+            HdAccount hdAccount = this.dbContext.Set<HdAccount>()
+               .FirstOrDefault(acc => acc.Index == default);
+
+            var privateKey = Key.Parse(hdAccount.Seed, oldPassphrase, this.network);
+            string encryptedSeed = privateKey.GetEncryptedBitcoinSecret(newPassphrase, this.network).ToWif();
+        
+            hdAccount.Seed = encryptedSeed;
+
+            this.dbContext.Set<HdAccount>().Update(hdAccount);
+            this.dbContext.SaveChanges();
+        }
+
         internal void Process(ChainedHeaderBlock connectedBlock)
         {
             if (connectedBlock.Block == default)

@@ -182,5 +182,26 @@ namespace FxCoin.CryptoPool.DbWallet.Controllers
                 TxHex = transaction.ToHex()
             } : transaction.GetHash().ToString();
         }
+
+        [ActionName("walletpassphrasechange")]
+        public void WalletPassphraseChange(string oldPassphrase, string newPassphrase)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(oldPassphrase)
+                    || string.IsNullOrWhiteSpace(newPassphrase))
+                {
+                    throw new RPCServerException(RPCErrorCode.RPC_INVALID_PARAMETER, "passphrase can not be empty");
+                }
+
+                this.manager.WalletPassphraseChange(oldPassphrase, newPassphrase);
+
+                this.cache.Remove(WalletPasswordKey);
+            }
+            catch (SecurityException se)
+            {
+                throw new RPCServerException(RPCErrorCode.RPC_INVALID_REQUEST, se.Message);
+            }
+        }       
     }
 }
