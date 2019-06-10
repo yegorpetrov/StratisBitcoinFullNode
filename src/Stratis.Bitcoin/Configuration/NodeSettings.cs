@@ -109,6 +109,11 @@ namespace Stratis.Bitcoin.Configuration
         /// </summary>
         public FeeRate MinRelayTxFeeRate { get; private set; }
 
+        /// <summary>Minimum numbers of confirmations that required for webhook trriger
+        /// Defaults is 3.
+        /// </summary>
+        public int ConfirmationsRecommended { get; private set; }
+
         /// <summary>
         /// Initializes a new instance of the object.
         /// </summary>
@@ -154,6 +159,7 @@ namespace Stratis.Bitcoin.Configuration
             this.ConfigurationFile = this.ConfigReader.GetOrDefault<string>("conf", null, this.Logger)?.NormalizeDirectorySeparator();
             this.DataDir = this.ConfigReader.GetOrDefault<string>("datadir", null, this.Logger)?.NormalizeDirectorySeparator();
             this.DataDirRoot = this.ConfigReader.GetOrDefault<string>("datadirroot", "StratisNode", this.Logger);
+            this.ConfirmationsRecommended = this.ConfigReader.GetOrDefault<int>("confirmationsRecommended", 3, this.Logger);
 
             // If the configuration file is relative then assume it is relative to the data folder and combine the paths.
             if (this.DataDir != null && this.ConfigurationFile != null)

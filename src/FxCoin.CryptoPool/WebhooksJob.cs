@@ -47,7 +47,7 @@
                     var hooks = ctx.Set<TxWebhook>()
                         .Include(wh => wh.TxRef)
                         .Include(wh => wh.TxRef.Address)
-                        .Where(h => h.SendOn.HasValue && h.SendOn <= DateTime.UtcNow && h.TxRef.ArrivalBlock < tip - 2)
+                        .Where(h => h.SendOn.HasValue && h.SendOn <= DateTime.UtcNow && h.TxRef.ArrivalBlock <= tip - settings.ConfirmationsRecommended)
                         .OrderBy(e => e.Id)
                         .Take(100);
 
