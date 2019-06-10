@@ -49,7 +49,7 @@ namespace Stratis.Bitcoin.Features.RPC
             string method = (string)req["method"];
 
             string controllerName = this.actionDescriptor.ActionDescriptors.Items.OfType<ControllerActionDescriptor>()
-                    .FirstOrDefault(w => w.ActionName == method)?.ControllerName ?? string.Empty;
+                    .LastOrDefault(w => w.ActionName == method)?.ControllerName ?? string.Empty;
 
             context.RouteData.Values.Add("action", method);
             //TODO: Need to be extensible
