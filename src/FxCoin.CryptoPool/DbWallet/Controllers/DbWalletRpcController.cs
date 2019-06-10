@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading.Tasks;
 using FxCoin.CryptoPool.Contracts;
 using FxCoin.CryptoPool.DbWallet.Broadcasting;
+using FxCoin.CryptoPool.DbWallet.Controllers.Models;
 using FxCoin.CryptoPool.DbWallet.TransactionHandler;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
@@ -20,6 +21,7 @@ using Stratis.Bitcoin.Features.RPC;
 using Stratis.Bitcoin.Features.RPC.Exceptions;
 using Stratis.Bitcoin.Features.Wallet;
 using Stratis.Bitcoin.Interfaces;
+using Stratis.Bitcoin.Networks;
 
 namespace FxCoin.CryptoPool.DbWallet.Controllers
 {
@@ -65,17 +67,11 @@ namespace FxCoin.CryptoPool.DbWallet.Controllers
         }
 
         [ActionName("getnewaddress")]
-        public object GetNewAddress(string fromAccount)
+        public NewAddressModel GetNewAddress(string fromAccount)
         {
             int.TryParse(fromAccount, out int accountIndex);
 
-            var address = this.manager.GetAddress(accountIndex, false);
-
-            return new
-            {
-                Address = address.address,
-                Index = address.index
-            };
+            return new NewAddressModel(this.manager.GetAddress(accountIndex, false).address);
         }
 
         [ActionName("sendrawtransaction")]
@@ -94,7 +90,7 @@ namespace FxCoin.CryptoPool.DbWallet.Controllers
         {
             int.TryParse(fromAccount, out int accountIndex);
 
-            return this.manager.GetBalance(accountIndex, minConfirmations);
+            return new Money(this.manager.GetBalance(accountIndex, minConfirmations)).ToDecimal(MoneyUnit.BTC);
         }
 
         [ActionName("gettransaction")]
@@ -150,12 +146,12 @@ namespace FxCoin.CryptoPool.DbWallet.Controllers
             {
                 AccountReference = accountIndex,
                 MinConfirmations = minConf,
-                OverrideFeeRate = null, // TODO
+                OverrideFeeRate = this.cache.Get<FeeRate>("fee"),
                 Shuffle = false,
                 Recipients = addresses.Select(rcp => new Recipient
                 {
                     Amount = new Money(rcp.Value, MoneyUnit.BTC),
-                    ScriptPubKey = BitcoinAddress.Create(rcp.Key, this.Network).ScriptPubKey
+                    ScriptPubKey = BitcoinAddress.Create(LitecoinAddressFix(rcp.Key), this.Network).ScriptPubKey
                 }),
                 WalletPassword = this.cache.Get<string>(WalletPasswordKey)
             };
@@ -180,7 +176,74 @@ namespace FxCoin.CryptoPool.DbWallet.Controllers
             {
                 TxHash = transaction.GetHash().ToString(),
                 TxHex = transaction.ToHex()
-            } : transaction.GetHash().ToString();
+            } : transaction.GetHash();
+        }
+
+        [ActionName("settxfee")]
+        public bool UnlockWallet(decimal btcPerKb)
+        {
+            this.cache.Set("fee", new FeeRate(new Money(btcPerKb, MoneyUnit.BTC)));
+            return true;
+        }
+
+        private string LitecoinAddressFix(string address)
+        {
+            if (this.Network is LitecoinMain || this.Network is LitecoinTest)
+            {
+                return LitecoinTest.ConvertDeprecatedAddress(address);
+            }
+            else return address;
+        }
+
+        [ActionName("validateaddress")]
+        [ActionDescription("Returns information about a bech32 or base58 bitcoin address")]
+        public ValidatedAddress ValidateAddress(string address)
+        {
+            address = LitecoinAddressFix(address);
+
+            var result = new ValidatedAddress
+            {
+                IsValid = false,
+                Address = address,
+            };
+
+            try
+            {
+                // P2WPKH
+                if (BitcoinWitPubKeyAddress.IsValid(address, this.Network, out Exception _))
+                {
+                    result.IsValid = true;
+                }
+                // P2WSH
+                else if (BitcoinWitScriptAddress.IsValid(address, this.Network, out Exception _))
+                {
+                    result.IsValid = true;
+                }
+                // P2PKH
+                else if (BitcoinPubKeyAddress.IsValid(address, this.Network))
+                {
+                    result.IsValid = true;
+                }
+                // P2SH
+                else if (BitcoinScriptAddress.IsValid(address, this.Network))
+                {
+                    result.IsValid = true;
+                    result.IsScript = true;
+                }
+            }
+            catch (NotImplementedException)
+            {
+                result.IsValid = false;
+            }
+
+            if (result.IsValid)
+            {
+                var scriptPubKey = BitcoinAddress.Create(address, this.Network).ScriptPubKey;
+                result.ScriptPubKey = scriptPubKey.ToHex();
+                result.IsWitness = scriptPubKey.IsWitness(this.Network);
+            }
+
+            return result;
         }
     }
 }

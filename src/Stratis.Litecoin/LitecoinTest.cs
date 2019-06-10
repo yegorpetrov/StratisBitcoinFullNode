@@ -138,5 +138,22 @@ namespace Stratis.Bitcoin.Networks
             Tuple.Create(new byte[]{0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xff,0xff,0x68,0xec,0xd3,0xce}, 19335),
             Tuple.Create(new byte[]{0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xff,0xff,0x42,0xb2,0xb6,0x23}, 19335)
         };
+
+        public static string ConvertDeprecatedAddress(string address)
+        {
+            var data = Encoders.Base58.DecodeData(address);
+
+            switch (data[0])
+            {
+                case 0xC4: // deprecated p2sh
+                    data[0] = 0x3A; // new p2sh
+                    break;
+                case 0x05: // deprecated p2sh
+                    data[0] = 0x32; // new p2sh
+                    break;
+            }
+
+            return Encoders.Base58Check.EncodeData(data, 0, data.Length - 4);
+        }
     }
 }

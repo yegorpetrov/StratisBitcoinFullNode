@@ -230,7 +230,7 @@
                 {
                     Address = txref.Address,
                     Transaction = txref,
-                    Confirmations = tip - txref.ArrivalBlock.Value
+                    Confirmations = txref.ArrivalBlock.HasValue ? tip - txref.ArrivalBlock.Value : 0
                 });
         }
         internal void ReserveTransactionFunds(Transaction transaction, Guid reservationSourceId)

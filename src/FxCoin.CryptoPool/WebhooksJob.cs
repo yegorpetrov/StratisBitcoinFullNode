@@ -2,8 +2,10 @@
 {
     using System;
     using System.Collections.Generic;
+    using System.Globalization;
     using System.Linq;
     using System.Net.Http;
+    using System.Security.Cryptography;
     using System.Text;
     using System.Threading;
     using System.Threading.Tasks;
@@ -14,6 +16,7 @@
     using Microsoft.Extensions.Hosting;
     using Microsoft.Extensions.Logging;
     using NBitcoin;
+    using Stratis.Bitcoin.Configuration;
     using Stratis.Bitcoin.Signals;
 
     public class WebhooksJob : BackgroundService
@@ -37,19 +40,25 @@
 
             while (!stoppingToken.IsCancellationRequested)
             {
-                this.runner.Run<DbWalletContext, HttpClient>((ctx, client) =>
+                this.runner.Run<DbWalletContext, NodeSettings>((ctx, settings) =>
                 {
                     var tip = chain.Tip.Height;
 
                     var hooks = ctx.Set<TxWebhook>()
                         .Include(wh => wh.TxRef)
+                        .Include(wh => wh.TxRef.Address)
                         .Where(h => h.SendOn.HasValue && h.SendOn <= DateTime.UtcNow && h.TxRef.ArrivalBlock < tip - 2)
                         .OrderBy(e => e.Id)
-                        .Take(1000);
+                        .Take(100);
 
-                    foreach (var hook in hooks)
+                    using (var client = HttpClientFactory.Create())
                     {
-                        ProcessWebhook(client, hook, stoppingToken).Wait();
+                        foreach (var hook in hooks)
+                        {
+                            var webhookUri = settings.ConfigReader.GetOrDefault("webhookUri", string.Empty, this.logger);
+                            var webhookSecret = settings.ConfigReader.GetOrDefault("webhookSecret", string.Empty, this.logger);
+                            ProcessWebhook(client, hook, webhookUri, webhookSecret, stoppingToken).Wait();
+                        }
                     }
 
                     try
@@ -84,15 +93,37 @@
             });
         }
 
-        private async Task ProcessWebhook(HttpClient client, TxWebhook hook, CancellationToken stoppingToken)
+        private async Task ProcessWebhook(HttpClient client, TxWebhook hook, string baseUri, string secret, CancellationToken stoppingToken)
         {
             this.logger.LogTrace($"Processing webhook {hook.Id}");
 
             hook.SendOn = DateTime.UtcNow + (2 * (DateTime.UtcNow - hook.Created)); // defer
 
-            var uri = new UriBuilder("http://example.com")
+            if (string.IsNullOrEmpty(baseUri))
             {
-                Query = $"txid={hook.TxRef.TxId}&block={hook.TxRef.ArrivalBlock}&amount={hook.TxRef.Amount}"
+                this.logger.LogWarning("Webhook uri isn't set (-webhookUri)");
+                hook.Status = "Webhook uri isn't set";
+                return;
+            }
+
+            var query = new
+            {
+                address = hook.TxRef.Address.Address,
+                amount = new Money(hook.TxRef.Amount).ToDecimal(MoneyUnit.BTC).ToString(CultureInfo.InvariantCulture),
+                txId = hook.TxRef.TxId
+            };
+
+            string control;
+
+            using (var sha1 = SHA1.Create())
+            {
+                var bytes = Encoding.ASCII.GetBytes($"{query.address}{query.amount}{query.txId}{secret}");
+                control = string.Join(string.Empty, sha1.ComputeHash(bytes).Select(b => b.ToString("x2")));
+            }
+
+            var uri = new UriBuilder(baseUri)
+            {
+                Query = $"txid={query.txId}&amount={query.amount}&address={query.address}&control={control}"
             };
             try
             {
