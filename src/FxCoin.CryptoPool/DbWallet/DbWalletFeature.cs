@@ -61,7 +61,7 @@
                     services.AddSingleton<ScopeRunner>();
                     services.AddSingleton<HdAddressLookup>();
                     services.AddScoped<DbWalletManager>();
-                    services.AddScoped<DbWalletController>();
+                    services.AddScoped<StatsController>();
                     services.AddScoped<WalletTransactionHandler>();
                     services.AddScoped<WalletFeePolicy>();
                     services.AddSingleton<WebhooksJob>();

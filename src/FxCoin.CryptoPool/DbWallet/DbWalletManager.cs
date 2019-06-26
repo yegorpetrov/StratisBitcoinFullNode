@@ -85,6 +85,8 @@
 
         public (string address, int index, byte[] scriptPubKey) GetAddress(int accountId, bool forChange = false)
         {
+            this.logger.LogTrace($"New address requested: acc={accountId}, ischange={forChange}");
+
             HdAccount account = this.dbContext.Set<HdAccount>()
                 .FirstOrDefault(a => a.Index == accountId);
 
@@ -98,27 +100,26 @@
             {
                 DbSet<HdAddress> addresses = this.dbContext.Set<HdAddress>();
                 int idx = addresses.Count(a => a.Account.Index == accountId && a.IsChange == forChange);
+                var addressWithSpk = this.network.GenerateAddressAndSpk(account.ExtPubKey, idx, forChange);
 
                 HdAddress newAddressEntry = addresses.Add(new HdAddress
                 {
+                    Address = addressWithSpk.address.ToString(),
                     Account = account,
                     IsChange = forChange,
-                    Index = idx
+                    Index = idx,
                 })
                 .Entity;
 
                 this.dbContext.SaveChanges();
 
-                PubKey key = HdOperations.GeneratePublicKey(
-                    account.ExtPubKey, newAddressEntry.Index, forChange);
-                BitcoinPubKeyAddress address = key.GetAddress(this.network);
-                newAddressEntry.ScriptPubKey = address.ScriptPubKey.ToBytes();
-                newAddressEntry.PubKey = key.ToBytes();
-                newAddressEntry.Address = address.ToString();
+                newAddressEntry.Address = addressWithSpk.ToString();
                 this.dbContext.SaveChanges();
-                this.addressLookup[newAddressEntry.ScriptPubKey] = newAddressEntry.Id;
+                this.addressLookup[addressWithSpk.spk] = newAddressEntry.Id;
 
-                return (address.ToString(), newAddressEntry.Index, newAddressEntry.ScriptPubKey);
+                this.logger.LogTrace($"New address: {addressWithSpk}");
+
+                return (addressWithSpk.ToString(), newAddressEntry.Index, addressWithSpk.spk);
             }
         }
 
@@ -216,14 +217,28 @@
             }
         }
 
-        private static Expression<Func<TxRef, bool>> GetUtxoPredicate(int accountReference, int tip, int confirmations)
+        private Expression<Func<TxRef, bool>> GetUtxoPredicate(int accountReference, int tip, int confirmations)
         {
-            return txref =>
-                    !txref.SpendingBlock.HasValue &&
-                    !txref.ReservedBy.HasValue &&
-                    !txref.ReservedOn.HasValue &&
-                    (confirmations == 0 || txref.ArrivalBlock <= tip - confirmations) &&
-                    txref.Address.Account.Index == accountReference;
+            if (this.dbContext.Set<HdAccount>().Count() == 1 &&
+                this.dbContext.Set<HdAccount>().First().Index == accountReference)
+            {
+                return txref =>
+                        !txref.SpendingBlock.HasValue &&
+                        !txref.ReservedBy.HasValue &&
+                        !txref.ReservedOn.HasValue &&
+                        (confirmations == 0 || txref.ArrivalBlock <= tip - confirmations);
+                        // no need to check account for single-account wallets
+                        // eliminates useless joins
+            }
+            else
+            {
+                return txref =>
+                        !txref.SpendingBlock.HasValue &&
+                        !txref.ReservedBy.HasValue &&
+                        !txref.ReservedOn.HasValue &&
+                        (confirmations == 0 || txref.ArrivalBlock <= tip - confirmations) &&
+                        txref.Address.Account.Index == accountReference;
+            }
         }
 
         internal long GetBalance(int accountReference, int confirmations = default)
@@ -241,9 +256,11 @@
 
             return this.dbContext.Set<TxRef>()
                 .Include(t => t.Address)
+                .Include(t => t.Address.Account)
                 .Where(GetUtxoPredicate(accountReference, tip, confirmations))
                 .Select(txref => new UnspentOutputReference
                 {
+                    Account = txref.Address.Account,
                     Address = txref.Address,
                     Transaction = txref,
                     Confirmations = txref.ArrivalBlock.HasValue ? tip - txref.ArrivalBlock.Value : 0

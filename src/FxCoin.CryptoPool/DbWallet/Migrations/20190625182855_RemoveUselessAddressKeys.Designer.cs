@@ -4,14 +4,16 @@ using FxCoin.CryptoPool.DbWallet.Entities.Context;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace FxCoin.CryptoPool.DbWallet.Migrations
 {
     [DbContext(typeof(DbWalletContext))]
-    partial class DbWalletContextModelSnapshot : ModelSnapshot
+    [Migration("20190625182855_RemoveUselessAddressKeys")]
+    partial class RemoveUselessAddressKeys
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

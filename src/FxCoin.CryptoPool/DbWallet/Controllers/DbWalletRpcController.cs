@@ -28,13 +28,14 @@ namespace FxCoin.CryptoPool.DbWallet.Controllers
     public class DbWalletRpcController : FeatureController
     {
         private static Guid WalletPasswordKey = Guid.NewGuid();
-
+        private readonly HdAddressLookup _hdAddressLookup;
         private readonly DbWalletManager manager;
         private readonly IBroadcasterManager broadcaster;
         private readonly IMemoryCache cache;
         private readonly WalletTransactionHandler handler;
 
         public DbWalletRpcController(
+            HdAddressLookup hdAddressLookup,
             ChainIndexer chainIndexer,
             IConsensusManager consensusManager,
             IFullNode fullNode,
@@ -45,6 +46,7 @@ namespace FxCoin.CryptoPool.DbWallet.Controllers
             IMemoryCache cache,
             WalletTransactionHandler walletTransactionHandler) : base(fullNode: fullNode, consensusManager: consensusManager, chainIndexer: chainIndexer, network: network)
         {
+            this._hdAddressLookup = hdAddressLookup;
             this.manager = walletManager;
             this.broadcaster = broadcaster;
             this.cache = cache;
@@ -79,6 +81,11 @@ namespace FxCoin.CryptoPool.DbWallet.Controllers
         {
             Transaction transaction = this.FullNode.Network.CreateTransaction(hex);
             await this.broadcaster.BroadcastTransactionAsync(transaction);
+            var txBroadcastState = this.broadcaster.GetTransaction(transaction.GetHash());
+            if (txBroadcastState.State == State.CantBroadcast)
+            {
+                throw new RPCServerException(RPCErrorCode.RPC_DATABASE_ERROR, txBroadcastState.ErrorMessage);
+            }
             this.manager.Process(transaction);
             uint256 hash = transaction.GetHash();
 
@@ -156,27 +163,40 @@ namespace FxCoin.CryptoPool.DbWallet.Controllers
                 WalletPassword = this.cache.Get<string>(WalletPasswordKey)
             };
 
-            var transaction = this.handler.BuildTransaction(ctx);
-
-            if (reservationId.HasValue)
+            if (string.IsNullOrEmpty(ctx.WalletPassword))
             {
-                if (this.manager.IsReserveIdInUse(reservationId.Value))
+                throw new RPCServerException(RPCErrorCode.RPC_WALLET_UNLOCK_NEEDED,
+                    "Error: Please enter the wallet passphrase with walletpassphrase first.");
+            }
+
+            try
+            {
+                var transaction = this.handler.BuildTransaction(ctx);
+
+                if (reservationId.HasValue)
                 {
-                    throw new InvalidOperationException($"Request id is in use: {reservationId}");
+                    if (this.manager.IsReserveIdInUse(reservationId.Value))
+                    {
+                        throw new InvalidOperationException($"Request id is in use: {reservationId}");
+                    }
+
+                    this.manager.ReserveTransactionFunds(transaction, reservationId.Value);
+                }
+                else // broadcast as is if no reservation id was set
+                {
+                    await SendTransactionAsync(transaction.ToHex());
                 }
 
-                this.manager.ReserveTransactionFunds(transaction, reservationId.Value);
+                return reservationId.HasValue ? (object)new TxBuilderResponse
+                {
+                    TxHash = transaction.GetHash().ToString(),
+                    TxHex = transaction.ToHex()
+                } : transaction.GetHash();
             }
-            else // broadcast as is if no reservation id was set
+            catch (InsufficientFundsException e)
             {
-                await SendTransactionAsync(transaction.ToHex());
+                throw new RPCServerException(RPCErrorCode.RPC_WALLET_INSUFFICIENT_FUNDS, e.Message);
             }
-
-            return reservationId.HasValue ? (object)new TxBuilderResponse
-            {
-                TxHash = transaction.GetHash().ToString(),
-                TxHex = transaction.ToHex()
-            } : transaction.GetHash();
         }
 
         [ActionName("settxfee")]
@@ -265,6 +285,12 @@ namespace FxCoin.CryptoPool.DbWallet.Controllers
             {
                 throw new RPCServerException(RPCErrorCode.RPC_INVALID_REQUEST, se.Message);
             }
-        }       
+        }
+
+        [ActionName("dumplookup")]
+        public object DumpLookup()
+        {
+            return _hdAddressLookup.Dump();
+        }
     }
 }

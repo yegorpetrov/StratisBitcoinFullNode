@@ -25,6 +25,7 @@
         private readonly ChainIndexer chain;
         private readonly ISignals signals;
         private readonly ILogger logger;
+        private const int MaxWebHooksAtOnce = 100;
 
         public WebhooksJob(ScopeRunner runner, ILoggerFactory loggerFactory, ChainIndexer chain, ISignals signals)
         {
@@ -40,6 +41,8 @@
 
             while (!stoppingToken.IsCancellationRequested)
             {
+                bool shortenDelay = false;
+
                 this.runner.Run<DbWalletContext, NodeSettings>((ctx, settings) =>
                 {
                     var tip = chain.Tip.Height;
@@ -49,7 +52,12 @@
                         .Include(wh => wh.TxRef.Address)
                         .Where(h => h.SendOn.HasValue && h.SendOn <= DateTime.UtcNow && h.TxRef.ArrivalBlock <= tip - settings.ConfirmationsRecommended)
                         .OrderBy(e => e.Id)
-                        .Take(100);
+                        .Take(MaxWebHooksAtOnce)
+                        .ToArrayAsync(stoppingToken)
+                        .Result;
+
+                    // there's probably more to process, so hurry up
+                    shortenDelay = hooks.Length >= MaxWebHooksAtOnce;
 
                     using (var client = HttpClientFactory.Create())
                     {
@@ -72,7 +80,7 @@
                     }
                 });
 
-                await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
+                await Task.Delay(shortenDelay ? TimeSpan.FromSeconds(1) : TimeSpan.FromMinutes(1), stoppingToken);
             }
 
             this.signals.Unsubscribe(token);
@@ -82,14 +90,17 @@
         {
             this.runner.Run<DbWalletContext>(ctx =>
             {
-                ctx.Set<TxWebhook>().Add(new TxWebhook
+                if (!ctx.Find<HdAddress>(ev.TxRef.AddressId).IsChange)
                 {
-                    Created = DateTime.UtcNow,
-                    SendOn = DateTime.UtcNow,
-                    TxRefId = ev.TxRef.Id
-                });
+                    ctx.Set<TxWebhook>().Add(new TxWebhook
+                    {
+                        Created = DateTime.UtcNow,
+                        SendOn = DateTime.UtcNow,
+                        TxRefId = ev.TxRef.Id
+                    });
 
-                ctx.SaveChangesAsync(token).Wait();
+                    ctx.SaveChangesAsync(token).Wait();
+                }
             });
         }
 

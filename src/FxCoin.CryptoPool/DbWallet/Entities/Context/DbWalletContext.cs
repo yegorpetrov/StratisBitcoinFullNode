@@ -28,8 +28,6 @@ namespace FxCoin.CryptoPool.DbWallet.Entities.Context
                 entity.HasOne(e => e.Account);
                 entity.Property(e => e.Address).HasMaxLength(64);
                 entity.Property(e => e.IsChange);
-                entity.Property(e => e.ScriptPubKey).HasMaxLength(256);
-                entity.Property(e => e.PubKey).HasMaxLength(128);
                 entity.Property(e => e.Index);
             });
 

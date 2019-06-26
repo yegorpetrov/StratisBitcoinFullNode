@@ -133,16 +133,18 @@ namespace FxCoin.CryptoPool.DbWallet.TransactionHandler
         {
             context.UnspentOutputs = this.walletManager.GetSpendableTransactionsInAccount(context.AccountReference, context.MinConfirmations).ToList();
 
-            if (context.UnspentOutputs.Count == 0)
+            if (!context.UnspentOutputs.Any())
             {
-                throw new WalletException("No spendable transactions found.");
+                throw new InsufficientFundsException($"No spendable transactions found");
             }
 
             // Get total spendable balance in the account.
             long balance = context.UnspentOutputs.Sum(t => t.Transaction.Amount);
             long totalToSend = context.Recipients.Sum(s => s.Amount);
             if (balance < totalToSend)
-                throw new WalletException("Not enough funds.");
+            {
+                throw new InsufficientFundsException($"Not enough funds: {balance} < {totalToSend}");
+            }
 
             Money sum = 0;
             var coins = new List<Coin>();
@@ -158,8 +160,8 @@ namespace FxCoin.CryptoPool.DbWallet.TransactionHandler
                 if (sum > totalToSend)
                     break;
 
-                Script scriptPubKey = new Script(item.Transaction.Address.ScriptPubKey);
-                coins.Add(new Coin(uint256.Parse(item.Transaction.TxId), (uint)item.Transaction.Index, item.Transaction.Amount, scriptPubKey));
+                var spkBytes = this.network.GenerateAddressAndSpk(item.Account.ExtPubKey, item.Address.Index, item.Address.IsChange).spk;
+                coins.Add(new Coin(uint256.Parse(item.Transaction.TxId), (uint)item.Transaction.Index, item.Transaction.Amount, new Script(spkBytes)));
                 sum += item.Transaction.Amount;
             }
 

@@ -22,6 +22,7 @@ namespace FxCoin.CryptoPool.DbWallet.TransactionHandler
         /// Number of confirmations for this UTXO.
         /// </summary>
         public int Confirmations { get; set; }
+        public HdAccount Account { get; internal set; }
 
         /// <summary>
         /// Convert the <see cref="TransactionData"/> to an <see cref="OutPoint"/>

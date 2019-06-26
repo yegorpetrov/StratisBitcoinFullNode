@@ -12,10 +12,6 @@
 
         public string Address { get; set; }
 
-        public byte[] ScriptPubKey { get; set; }
-
-        public byte[] PubKey { get; set; }
-
         public bool IsChange { get; set; }
 
         public int Index { get; set; }

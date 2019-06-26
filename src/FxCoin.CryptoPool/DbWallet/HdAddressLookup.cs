@@ -8,41 +8,64 @@ using FxCoin.CryptoPool.DbWallet.Entities;
 using FxCoin.CryptoPool.DbWallet.Entities.Context;
 using Stratis.Bitcoin.Features.Wallet;
 using Stratis.Bitcoin.Utilities;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using System.Diagnostics;
+using System.Collections.Concurrent;
 
 namespace FxCoin.CryptoPool.DbWallet
 {
     public class HdAddressLookup
     {
         private readonly ScopeRunner runner;
+        private readonly ILogger<HdAddressLookup> _logger;
+        private readonly Network _network;
         private IDictionary<string, int> spkToAddrIdLookup;
         private IDictionary<OutPoint, int> utxoIdLookup;
 
-        public HdAddressLookup(ScopeRunner runner)
+        public HdAddressLookup(ScopeRunner runner, INodeStats nodeStats, ILogger<HdAddressLookup> logger, Network network)
         {
             this.runner = runner;
+            this._logger = logger;
+            this._network = network;
+            nodeStats.RegisterStats(AddComponentStats, StatsType.Component);
+        }
+
+        private void AddComponentStats(StringBuilder statsBuilder)
+        {
+            statsBuilder.AppendLine();
+            statsBuilder.AppendLine("======Wallet Lookup======");
+            statsBuilder.AppendLine($"ScriptPubKey to address id lookup size: {this.spkToAddrIdLookup.Count}");
+            statsBuilder.AppendLine($"OutPoint to TxRef id lookup size: {this.utxoIdLookup.Count}");
         }
 
         public void Init()
         {
+            _logger.LogInformation($"Initializing address lookup...");
+            var sw = new Stopwatch();
+            sw.Start();
+
             this.runner.Run<DbWalletContext>(dbContext =>
             {
-                this.spkToAddrIdLookup = dbContext.Set<HdAddress>().Select(a => new
-                {
-                    a.Id,
-                    a.ScriptPubKey,
-                })
-                .ToDictionary(e => ToHex(e.ScriptPubKey), e => e.Id);
+                this.spkToAddrIdLookup = new ConcurrentDictionary<string, int>(
+                    dbContext.Set<HdAddress>()
+                    .AsNoTracking()
+                    .Include(a => a.Account)
+                    .Select(e => new KeyValuePair<string, int>(ToHex(this._network.GenerateAddressAndSpk(e.Account.ExtPubKey, e.Index, e.IsChange).spk), e.Id))
+                );
 
-                this.utxoIdLookup = dbContext.Set<TxRef>()
+                this.utxoIdLookup = new ConcurrentDictionary<OutPoint, int>(
+                    dbContext.Set<TxRef>()
+                    .AsNoTracking()
                     .Where(txref => !txref.SpendingBlock.HasValue)
-                    .Select(txref => new
-                    {
-                        txref.Id,
-                        txref.TxId,
-                        txref.Index
-                    })
-                    .ToDictionary(e => new OutPoint(uint256.Parse(e.TxId), e.Index), e => e.Id);
+                    .Select(e => new { e.Id, e.TxId, e.Index })
+                    .Select(e => new KeyValuePair<OutPoint, int>(
+                        new OutPoint(uint256.Parse(e.TxId), e.Index), e.Id))
+                );
             });
+
+            sw.Stop();
+            _logger.LogInformation($"Address lookup initialized in {sw.Elapsed} ({this.spkToAddrIdLookup.Count}, {this.utxoIdLookup.Count})");
         }
 
         private static string ToHex(byte[] input) => Encoders.Hex.EncodeData(input);
@@ -79,6 +102,15 @@ namespace FxCoin.CryptoPool.DbWallet
         public void EvictUtxo(OutPoint @out)
         {
             this.utxoIdLookup.Remove(@out);
+        }
+
+        public object Dump()
+        {
+            return new
+            {
+                spkToAddrIdLookup,
+                utxoIdLookup
+            };
         }
     }
 }
