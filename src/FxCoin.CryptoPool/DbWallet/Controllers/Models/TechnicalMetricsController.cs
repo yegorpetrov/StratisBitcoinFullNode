@@ -48,22 +48,13 @@ namespace FxCoin.CryptoPool.DbWallet.Controllers.Models
         {
             var stats = nodeStats.GetStats();
 
-            var sb = new StringBuilder();
+            var lines = _parsers
+                .OrderBy(kv => kv.Key)
+                .Select(kv => new { kv.Key, kv.Value.Match(stats).Groups[1].Value })
+                .Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
+                .Select(kv => $"{kv.Key} {kv.Value}");
 
-            foreach (var parser in _parsers.OrderBy(kv => kv.Key))
-            {
-                var result = parser.Value.Match(stats).Groups[1].Value;
-                if (!string.IsNullOrWhiteSpace(result))
-                {
-                    sb.AppendLine($"{parser.Key} {result}");
-                }
-                else
-                {
-                    logger.LogWarning($"No metrics data for {parser.Key}");
-                }
-            }
-
-            return Ok(sb.ToString());
+            return Ok(string.Join("\n", lines));
         }
     }
 }

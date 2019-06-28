@@ -33,8 +33,7 @@ namespace FxCoin.CryptoPool.DbWallet.TransactionHandler
         private readonly DbWalletManager walletManager;
 
         private readonly WalletFeePolicy walletFeePolicy;
-        private readonly IBlockStore blockStore;
-
+        
         public WalletTransactionHandler(
             ILoggerFactory loggerFactory,
             DbWalletManager walletManager,
@@ -45,7 +44,6 @@ namespace FxCoin.CryptoPool.DbWallet.TransactionHandler
             this.network = network;
             this.walletManager = walletManager;
             this.walletFeePolicy = walletFeePolicy;
-            this.blockStore = blockStore;
             this.logger = loggerFactory.CreateLogger(this.GetType().FullName);
         }
 
