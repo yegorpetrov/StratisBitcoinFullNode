@@ -78,7 +78,7 @@ namespace NBitcoin.Tests
         [Trait("UnitTest", "UnitTest")]
         public void BitcoinMainnetIsInitializedCorrectly()
         {
-            Assert.Equal(16, this.networkMain.Checkpoints.Count);
+            Assert.Equal(17, this.networkMain.Checkpoints.Count);
             Assert.Equal(6, this.networkMain.DNSSeeds.Count);
             Assert.Equal(512, this.networkMain.SeedNodes.Count);
 
@@ -163,7 +163,7 @@ namespace NBitcoin.Tests
         {
             Network network = KnownNetworks.TestNet;
 
-            Assert.Equal(13, network.Checkpoints.Count);
+            Assert.Equal(14, network.Checkpoints.Count);
             Assert.Equal(3, network.DNSSeeds.Count);
             Assert.Empty(network.SeedNodes);
 

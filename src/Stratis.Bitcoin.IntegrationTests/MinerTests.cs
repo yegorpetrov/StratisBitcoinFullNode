@@ -146,15 +146,15 @@ namespace Stratis.Bitcoin.IntegrationTests
 
                 IDateTimeProvider dateTimeProvider = DateTimeProvider.Default;
 
-                var inMemoryCoinView = new InMemoryCoinView(this.ChainIndexer.Tip.HashBlock);
-                this.cachedCoinView = new CachedCoinView(inMemoryCoinView, dateTimeProvider, new LoggerFactory(), new NodeStats(dateTimeProvider));
-
                 var loggerFactory = new ExtendedLoggerFactory();
                 loggerFactory.AddConsoleWithFilters();
 
                 var nodeSettings = new NodeSettings(this.network, args: new string[] { "-checkpoints" });
                 var consensusSettings = new ConsensusSettings(nodeSettings);
                 var connectionSettings = new ConnectionManagerSettings(nodeSettings);
+
+                var inMemoryCoinView = new InMemoryCoinView(this.ChainIndexer.Tip.HashBlock);
+                this.cachedCoinView = new CachedCoinView(inMemoryCoinView, dateTimeProvider, new LoggerFactory(), new NodeStats(dateTimeProvider), new Checkpoints(this.network, consensusSettings));
 
                 var signals = new Signals.Signals(loggerFactory, null);
                 var asyncProvider = new AsyncProvider(loggerFactory, signals, new NodeLifetime());

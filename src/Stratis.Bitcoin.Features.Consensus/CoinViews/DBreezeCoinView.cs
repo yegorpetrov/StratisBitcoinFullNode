@@ -234,7 +234,7 @@ namespace Stratis.Bitcoin.Features.Consensus.CoinViews
                         transaction.Insert("Coins", coin.TransactionId.ToBytes(false), this.dBreezeSerializer.Serialize(coin.ToCoins()));
                     }
 
-                    if (rewindDataList != null)
+                    if (rewindDataList != null && rewindDataList.Any())
                     {
                         int nextRewindIndex = this.GetRewindIndex(transaction) + 1;
                         foreach (RewindData rewindData in rewindDataList)
