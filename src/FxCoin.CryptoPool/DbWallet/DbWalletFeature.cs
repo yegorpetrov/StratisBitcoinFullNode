@@ -14,7 +14,6 @@
     using Stratis.Bitcoin.Builder;
     using Stratis.Bitcoin.Builder.Feature;
     using Stratis.Bitcoin.Configuration.Logging;
-    using Stratis.Bitcoin.Features.BlockStore;
     using Stratis.Bitcoin.Features.MemoryPool;
 
     public sealed class DbWalletFeature : FullNodeFeature
@@ -53,7 +52,6 @@
                 features
                 .AddFeature<DbWalletFeature>()
                 .DependOn<MempoolFeature>()
-                .DependOn<BlockStoreFeature>()
                 .FeatureServices(services =>
                 {
                     services.AddDbContext<DbWalletContext>(options => options.UseSqlServer(connectionString));
