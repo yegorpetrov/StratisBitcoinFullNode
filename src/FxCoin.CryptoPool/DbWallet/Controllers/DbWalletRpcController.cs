@@ -96,6 +96,10 @@ namespace FxCoin.CryptoPool.DbWallet.Controllers
         {
             int.TryParse(fromAccount, out int accountIndex);
 
+            if(minConfirmations == 0)
+            {
+                minConfirmations = this.Settings.ConfirmationsRecommended;
+            }
             return new Money(this.manager.GetBalance(accountIndex, minConfirmations)).ToDecimal(MoneyUnit.BTC);
         }
 
