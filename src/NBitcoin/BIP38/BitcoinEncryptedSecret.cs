@@ -23,18 +23,22 @@ namespace NBitcoin
         }
 
         public BitcoinEncryptedSecretNoEC(Key key, string password, Network network)
-            : base(GenerateWif(key, password, network), network)
+            : base(GenerateWif(key, password, network, ComputeAddressHash(key, network)), network)
         {
-
+            this._AddressHash = ComputeAddressHash(key, network);
         }
 
-        private static string GenerateWif(Key key, string password, Network network)
+        public static byte[] ComputeAddressHash(Key key, Network network)
         {
-            byte[] vch = key.ToBytes();
             //Compute the Bitcoin address (ASCII),
             byte[] addressBytes = Encoders.ASCII.DecodeData(key.PubKey.GetAddress(network).ToString());
             // and take the first four bytes of SHA256(SHA256()) of it. Let's call this "addresshash".
-            byte[] addresshash = Hashes.Hash256(addressBytes).ToBytes().SafeSubarray(0, 4);
+            return Hashes.Hash256(addressBytes).ToBytes().SafeSubarray(0, 4);
+        }
+
+        private static string GenerateWif(Key key, string password, Network network, byte[] addresshash)
+        {
+            byte[] vch = key.ToBytes();
 
             byte[] derived = SCrypt.BitcoinComputeDerivedKey(Encoding.UTF8.GetBytes(password), addresshash);
 
@@ -276,7 +280,7 @@ namespace NBitcoin
         }
 
 
-        private byte[] _AddressHash;
+        protected byte[] _AddressHash;
         public byte[] AddressHash
         {
             get
