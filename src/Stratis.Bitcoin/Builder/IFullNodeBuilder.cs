@@ -35,7 +35,7 @@ namespace Stratis.Bitcoin.Builder
         /// <param name="configureFeatures">A method that adds features to the collection.</param>
         /// <returns>Interface to allow fluent code.</returns>
         IFullNodeBuilder ConfigureFeature(Action<IFeatureCollection> configureFeatures);
-
+        
         /// <summary>
         /// Adds services to the builder.
         /// </summary>

@@ -220,7 +220,7 @@ namespace Stratis.Bitcoin.Features.PoA
                         services.AddSingleton<IPoAMiner, PoAMiner>();
                         services.AddSingleton<MinerSettings>();
                         services.AddSingleton<PoAMinerSettings>();
-                        services.AddSingleton<SlotsManager>();
+                        services.AddSingleton<ISlotsManager, SlotsManager>();
                         services.AddSingleton<BlockDefinition, PoABlockDefinition>();
                     });
             });
@@ -245,7 +245,8 @@ namespace Stratis.Bitcoin.Features.PoA
 
                         // Voting.
                         services.AddSingleton<VotingManager>();
-                        services.AddSingleton<VotingController>();
+                        services.AddSingleton<DefaultVotingController>();
+                        services.AddSingleton<FederationVotingController>();
                         services.AddSingleton<IPollResultExecutor, PollResultExecutor>();
                         services.AddSingleton<IWhitelistedHashesRepository, WhitelistedHashesRepository>();
                         services.AddSingleton<IdleFederationMembersKicker>();

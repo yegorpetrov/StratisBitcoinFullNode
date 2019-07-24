@@ -11,6 +11,9 @@ namespace Stratis.Bitcoin.Features.PoA.Voting
 
         /// <summary>Reverts effect of <see cref="VotingData"/>.</summary>
         void RevertChange(VotingData data);
+
+        /// <summary>Converts <see cref="VotingData"/> to a human readable format.</summary>
+        string ConvertToString(VotingData data);
     }
 
     public class PollResultExecutor : IPollResultExecutor
@@ -78,9 +81,30 @@ namespace Stratis.Bitcoin.Features.PoA.Voting
             }
         }
 
+        /// <inheritdoc />
+        public string ConvertToString(VotingData data)
+        {
+            string action = $"Action:'{data.Key}'";
+
+            switch (data.Key)
+            {
+                case VoteKey.AddFederationMember:
+                case VoteKey.KickFederationMember:
+                    IFederationMember federationMember = this.consensusFactory.DeserializeFederationMember(data.Data);
+                    return $"{action},FederationMember:'{federationMember}'";
+
+                case VoteKey.WhitelistHash:
+                case VoteKey.RemoveHash:
+                    var hash = new uint256(data.Data);
+                    return $"{action},Hash:'{hash}'";
+            }
+
+            return "unknown (not supported voting data key)";
+        }
+
         public void AddFederationMember(byte[] federationMemberBytes)
         {
-            IFederationMember federationMember = this.consensusFactory.CreateFederationMemberFromBytes(federationMemberBytes);
+            IFederationMember federationMember = this.consensusFactory.DeserializeFederationMember(federationMemberBytes);
 
             this.logger.LogInformation("Adding new fed member: '{0}'.", federationMember);
             this.federationManager.AddFederationMember(federationMember);
@@ -88,7 +112,7 @@ namespace Stratis.Bitcoin.Features.PoA.Voting
 
         public void RemoveFederationMember(byte[] federationMemberBytes)
         {
-            IFederationMember federationMember = this.consensusFactory.CreateFederationMemberFromBytes(federationMemberBytes);
+            IFederationMember federationMember = this.consensusFactory.DeserializeFederationMember(federationMemberBytes);
 
             this.logger.LogInformation("Kicking fed member: '{0}'.", federationMember);
             this.federationManager.RemoveFederationMember(federationMember);

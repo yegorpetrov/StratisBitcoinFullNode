@@ -112,7 +112,7 @@ namespace Stratis.SmartContracts.IntegrationTests.PoW
                 View = new MempoolCoinView(testContext.cachedCoinView, testContext.mempool, testContext.mempoolLock, null)
             };
 
-            context.View.LoadViewAsync(tx).GetAwaiter().GetResult();
+            testContext.mempoolLock.ReadAsync(() => context.View.LoadViewLocked(tx)).GetAwaiter().GetResult();
 
             return MempoolValidator.CheckSequenceLocks(testContext.network, chainedBlock, context, flags, uselock, false);
         }
@@ -189,15 +189,15 @@ namespace Stratis.SmartContracts.IntegrationTests.PoW
                 this.ChainIndexer = new ChainIndexer(this.network);
                 this.network.Consensus.Options = new ConsensusOptions();
 
-                IDateTimeProvider dateTimeProvider = DateTimeProvider.Default;
-                var inMemoryCoinView = new InMemoryCoinView(this.ChainIndexer.Tip.HashBlock);
-                this.cachedCoinView = new CachedCoinView(inMemoryCoinView, dateTimeProvider, new LoggerFactory(), new NodeStats(new DateTimeProvider()));
-
                 this.loggerFactory = new ExtendedLoggerFactory();
                 this.loggerFactory.AddConsoleWithFilters();
 
                 this.NodeSettings = new NodeSettings(this.network, args: new string[] { "-checkpoints" });
                 var consensusSettings = new ConsensusSettings(this.NodeSettings);
+
+                IDateTimeProvider dateTimeProvider = DateTimeProvider.Default;
+                var inMemoryCoinView = new InMemoryCoinView(this.ChainIndexer.Tip.HashBlock);
+                this.cachedCoinView = new CachedCoinView(inMemoryCoinView, dateTimeProvider, new LoggerFactory(), new NodeStats(new DateTimeProvider()), new Checkpoints(this.network, consensusSettings));
 
                 var nodeDeployments = new NodeDeployments(this.network, this.ChainIndexer);
 
