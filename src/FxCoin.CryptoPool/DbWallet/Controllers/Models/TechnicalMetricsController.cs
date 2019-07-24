@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using Stratis.Bitcoin;
 using Stratis.Bitcoin.Utilities;
 
 namespace FxCoin.CryptoPool.DbWallet.Controllers.Models
@@ -43,10 +44,10 @@ namespace FxCoin.CryptoPool.DbWallet.Controllers.Models
         /// <remarks>https://github.com/prometheus/docs/blob/master/content/docs/instrumenting/exposition_formats.md</remarks>
         [HttpGet]
         public IActionResult Get(
-            [FromServices] INodeStats nodeStats,
+            [FromServices] IFullNode fullNode,
             [FromServices] ILogger<TechnicalMetricsController> logger)
         {
-            var stats = nodeStats.GetStats();
+            var stats = (fullNode as FullNode)?.LastLogOutput ?? string.Empty;
 
             var lines = _parsers
                 .OrderBy(kv => kv.Key)

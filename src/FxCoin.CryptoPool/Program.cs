@@ -8,7 +8,7 @@
     using Stratis.Bitcoin.Builder;
     using Stratis.Bitcoin.Configuration;
     using Stratis.Bitcoin.Features.Api;
-    //using Stratis.Bitcoin.Features.BlockStore;
+    using Stratis.Bitcoin.Features.BlockStore;
     using Stratis.Bitcoin.Features.Consensus;
     using Stratis.Bitcoin.Features.MemoryPool;
     using Stratis.Bitcoin.Features.RPC;
@@ -40,6 +40,7 @@
             IFullNode node = new FullNodeBuilder()
                 .UseNodeSettings(nodeSettings)
                 .UsePowConsensus()
+                .UseBlockStore()
                 .UseMempool()
                 .UseDbWallet(nodeSettings.ConfigReader.GetOrDefault("connectionstring", string.Empty))
                 .UseApi()

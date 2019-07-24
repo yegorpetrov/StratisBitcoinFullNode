@@ -120,7 +120,7 @@ namespace FxCoin.CryptoPool.DbWallet.Controllers
             }
             catch (SecurityException se)
             {
-                throw new RPCServerException(RPCErrorCode.RPC_INVALID_REQUEST, se.Message);
+                throw new RPCServerException(RPCErrorCode.RPC_WALLET_PASSPHRASE_INCORRECT, se.Message);
             }
             return true;
         }
@@ -193,6 +193,10 @@ namespace FxCoin.CryptoPool.DbWallet.Controllers
                 } : transaction.GetHash();
             }
             catch (InsufficientFundsException e)
+            {
+                throw new RPCServerException(RPCErrorCode.RPC_WALLET_INSUFFICIENT_FUNDS, e.Message);
+            }
+            catch (NotEnoughFundsException e)
             {
                 throw new RPCServerException(RPCErrorCode.RPC_WALLET_INSUFFICIENT_FUNDS, e.Message);
             }
