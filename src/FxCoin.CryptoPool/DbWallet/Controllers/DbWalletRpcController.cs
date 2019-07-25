@@ -92,7 +92,7 @@ namespace FxCoin.CryptoPool.DbWallet.Controllers
         }
 
         [ActionName("getbalance")]
-        public decimal GetBalance(string fromAccount, int minConfirmations = 0)
+        public decimal GetBalance(string fromAccount, int minConfirmations = 1)
         {
             int.TryParse(fromAccount, out int accountIndex);
 
