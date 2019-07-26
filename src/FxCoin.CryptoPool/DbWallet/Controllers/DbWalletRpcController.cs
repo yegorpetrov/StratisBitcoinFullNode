@@ -270,7 +270,7 @@ namespace FxCoin.CryptoPool.DbWallet.Controllers
         }
 
         [ActionName("walletpassphrasechange")]
-        public void WalletPassphraseChange(string oldPassphrase, string newPassphrase)
+        public bool WalletPassphraseChange(string oldPassphrase, string newPassphrase)
         {
             try
             {
@@ -288,6 +288,8 @@ namespace FxCoin.CryptoPool.DbWallet.Controllers
             {
                 throw new RPCServerException(RPCErrorCode.RPC_INVALID_REQUEST, se.Message);
             }
+
+            return true;
         }
 
         [ActionName("dumplookup")]
