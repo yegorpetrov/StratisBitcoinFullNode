@@ -113,13 +113,11 @@
 
                 this.dbContext.SaveChanges();
 
-                newAddressEntry.Address = addressWithSpk.ToString();
-                this.dbContext.SaveChanges();
                 this.addressLookup[addressWithSpk.spk] = newAddressEntry.Id;
 
                 this.logger.LogTrace($"New address: {addressWithSpk}");
 
-                return (addressWithSpk.ToString(), newAddressEntry.Index, addressWithSpk.spk);
+                return (addressWithSpk.address.ToString(), newAddressEntry.Index, addressWithSpk.spk);
             }
         }
 

@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -8,7 +7,6 @@ using NBitcoin;
 using Stratis.Bitcoin.AsyncWork;
 using Stratis.Bitcoin.Base.Deployments;
 using Stratis.Bitcoin.Features.Consensus.CoinViews;
-using Stratis.Bitcoin.Utilities;
 
 namespace Stratis.Bitcoin.Features.Consensus
 {
@@ -103,7 +101,7 @@ namespace Stratis.Bitcoin.Features.Consensus
             {
                 this.coinview.FetchCoins(idsToFetch, cancellation);
 
-                this.logger.LogTrace("{0} ids were pre-fetched.", idsToFetch.Length);
+                this.logger.LogDebug("{0} ids were pre-fetched.", idsToFetch.Length);
             }
         }
 

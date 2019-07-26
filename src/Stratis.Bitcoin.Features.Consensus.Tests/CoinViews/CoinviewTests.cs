@@ -6,6 +6,8 @@ using Microsoft.Extensions.Logging;
 using NBitcoin;
 using Stratis.Bitcoin.Configuration;
 using Stratis.Bitcoin.Configuration.Logging;
+using Stratis.Bitcoin.Configuration.Settings;
+using Stratis.Bitcoin.Consensus;
 using Stratis.Bitcoin.Features.Consensus.CoinViews;
 using Stratis.Bitcoin.Features.Consensus.ProvenBlockHeaders;
 using Stratis.Bitcoin.Networks;
@@ -47,7 +49,8 @@ namespace Stratis.Bitcoin.Features.Consensus.Tests.CoinViews
 
             this.rewindDataIndexCache = new RewindDataIndexCache(this.dateTimeProvider, this.network);
 
-            this.cachedCoinView = new CachedCoinView(this.dbreezeCoinview, this.dateTimeProvider, this.loggerFactory, this.nodeStats, this.stakeChainStore, this.rewindDataIndexCache);
+            var consensusSettings = new ConsensusSettings(new NodeSettings(this.network));
+            this.cachedCoinView = new CachedCoinView(this.dbreezeCoinview, this.dateTimeProvider, this.loggerFactory, this.nodeStats, new Checkpoints(this.network, consensusSettings), this.stakeChainStore, this.rewindDataIndexCache);
 
             this.rewindDataIndexCache.Initialize(this.chainIndexer.Height, this.cachedCoinView);
 

@@ -4,7 +4,6 @@ using Microsoft.Extensions.Logging;
 using NBitcoin;
 using Stratis.Bitcoin.EventBus;
 using Stratis.Bitcoin.EventBus.CoreEvents;
-using Stratis.Bitcoin.Primitives;
 using Stratis.Bitcoin.Signals;
 
 namespace Stratis.Bitcoin.Features.MemoryPool
@@ -60,7 +59,7 @@ namespace Stratis.Bitcoin.Features.MemoryPool
                     if (!success)
                         this.logger.LogDebug("Transaction with hash '{0}' failed to go back into mempool on block disconnect.", transaction.GetHash());
                     else
-                        this.logger.LogTrace("Transaction with hash '{0}' accepted back to mempool.", transaction.GetHash());
+                        this.logger.LogDebug("Transaction with hash '{0}' accepted back to mempool.", transaction.GetHash());
                 }
 
             }).ConfigureAwait(false);

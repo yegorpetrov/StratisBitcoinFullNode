@@ -1,12 +1,9 @@
 ﻿using System;
 using System.Text;
 using System.Threading.Tasks;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NBitcoin;
 using Stratis.Bitcoin.AsyncWork;
-using Stratis.Bitcoin.Base;
-using Stratis.Bitcoin.Builder;
 using Stratis.Bitcoin.Builder.Feature;
 using Stratis.Bitcoin.Configuration;
 using Stratis.Bitcoin.Connection;
@@ -187,7 +184,7 @@ namespace Stratis.Bitcoin.Features.Dns
                         break;
                     }
 
-                    this.logger.LogTrace("Restarting DNS server following previous failure.");
+                    this.logger.LogDebug("Restarting DNS server following previous failure.");
                 }
             }
         }

@@ -3,12 +3,12 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
-using NBitcoin;
 using Stratis.Bitcoin.AsyncWork;
 using Stratis.Bitcoin.Connection;
 using Stratis.Bitcoin.Interfaces;
 using Stratis.Bitcoin.P2P.Peer;
 using Stratis.Bitcoin.Utilities;
+using Stratis.Features.FederatedPeg.InputConsolidation;
 using Stratis.Features.FederatedPeg.Interfaces;
 using Stratis.Features.FederatedPeg.NetworkHelpers;
 using Stratis.Features.FederatedPeg.Payloads;
@@ -19,12 +19,6 @@ namespace Stratis.Features.FederatedPeg.TargetChain
     /// Requests partial transactions from the peers and calls <see cref="ICrossChainTransferStore.MergeTransactionSignaturesAsync".
     /// </summary>
     public interface IPartialTransactionRequester {
-        /// <summary>
-        /// Broadcast the partial transaction request to federation members.
-        /// </summary>
-        /// <param name="payload">The payload to broadcast.</param>
-        Task BroadcastAsync(RequestPartialTransactionPayload payload);
-
         /// <summary>
         /// Starts the broadcasting of partial transaction requests.
         /// </summary>
@@ -52,11 +46,11 @@ namespace Stratis.Features.FederatedPeg.TargetChain
         private readonly ICrossChainTransferStore crossChainTransferStore;
         private readonly IAsyncProvider asyncProvider;
         private readonly INodeLifetime nodeLifetime;
-        private readonly IConnectionManager connectionManager;
-        private readonly IFederationGatewaySettings federationGatewaySettings;
+        private readonly IFederatedPegBroadcaster federatedPegBroadcaster;
 
         private readonly IInitialBlockDownloadState ibdState;
         private readonly IFederationWalletManager federationWalletManager;
+        private readonly IInputConsolidator inputConsolidator;
 
         private IAsyncLoop asyncLoop;
 
@@ -65,62 +59,55 @@ namespace Stratis.Features.FederatedPeg.TargetChain
             ICrossChainTransferStore crossChainTransferStore,
             IAsyncProvider asyncProvider,
             INodeLifetime nodeLifetime,
-            IConnectionManager connectionManager,
-            IFederationGatewaySettings federationGatewaySettings,
+            IFederatedPegBroadcaster federatedPegBroadcaster,
             IInitialBlockDownloadState ibdState,
-            IFederationWalletManager federationWalletManager) {
+            IFederationWalletManager federationWalletManager,
+            IInputConsolidator inputConsolidator) {
             Guard.NotNull(loggerFactory, nameof(loggerFactory));
             Guard.NotNull(crossChainTransferStore, nameof(crossChainTransferStore));
             Guard.NotNull(asyncProvider, nameof(asyncProvider));
             Guard.NotNull(nodeLifetime, nameof(nodeLifetime));
-            Guard.NotNull(federationGatewaySettings, nameof(federationGatewaySettings));
 
             this.logger = loggerFactory.CreateLogger(this.GetType().FullName);
             this.crossChainTransferStore = crossChainTransferStore;
             this.asyncProvider = asyncProvider;
             this.nodeLifetime = nodeLifetime;
-            this.connectionManager = connectionManager;
-            this.federationGatewaySettings = federationGatewaySettings;
             this.ibdState = ibdState;
+            this.federatedPegBroadcaster = federatedPegBroadcaster;
             this.federationWalletManager = federationWalletManager;
-        }
-
-        /// <inheritdoc />
-        public async Task BroadcastAsync(RequestPartialTransactionPayload payload) {
-            List<INetworkPeer> peers = this.connectionManager.ConnectedPeers.ToList();
-
-            var ipAddressComparer = new IPAddressComparer();
-
-            foreach (INetworkPeer peer in peers) {
-                // Broadcast to peers.
-                if (!peer.IsConnected)
-                    continue;
-
-                if (this.federationGatewaySettings.FederationNodeIpEndPoints.Any(e => ipAddressComparer.Equals(e.Address, peer.PeerEndPoint.Address))) {
-                    try {
-                        await peer.SendMessageAsync(payload).ConfigureAwait(false);
-                    }
-                    catch (OperationCanceledException) {
-                    }
-                }
-            }
+            this.inputConsolidator = inputConsolidator;
         }
 
         public async Task BroadcastPartialTransactionsAsync() {
             if (this.ibdState.IsInitialBlockDownload() || !this.federationWalletManager.IsFederationWalletActive()) {
-                this.logger.LogTrace("Federation wallet isn't active or in IBD. Not attempting to request transaction signatures.");
+                this.logger.LogDebug("Federation wallet isn't active or in IBD. Not attempting to request transaction signatures.");
                 return;
             }
 
             // Broadcast the partial transaction with the earliest inputs.
-            IEnumerable<KeyValuePair<uint256, Transaction>> kvs =
-                (await this.crossChainTransferStore.GetTransactionsByStatusAsync(CrossChainTransferStatus.Partial, true))
-                .Take(NumberToSignAtATime);
+            IEnumerable<ICrossChainTransfer> transfers = this.crossChainTransferStore.GetTransfersByStatus(new[] {CrossChainTransferStatus.Partial}, true).Take(NumberToSignAtATime);
 
-            foreach (KeyValuePair<uint256, Transaction> kv in kvs)
+            foreach (ICrossChainTransfer transfer in transfers)
             {
-                await this.BroadcastAsync(new RequestPartialTransactionPayload(kv.Key).AddPartial(kv.Value));
-                this.logger.LogInformation("Partial template requested");
+                await this.federatedPegBroadcaster.BroadcastAsync(new RequestPartialTransactionPayload(transfer.DepositTransactionId).AddPartial(transfer.PartialTransaction));
+                this.logger.LogDebug("Partial template requested for deposit ID {0}", transfer.DepositTransactionId);
+            }
+
+            // If we don't have any broadcastable transactions, check if we have any consolidating transactions to sign.
+            if (!transfers.Any())
+            {
+                List<ConsolidationTransaction> consolidationTransactions = this.inputConsolidator.ConsolidationTransactions;
+                if (consolidationTransactions != null)
+                {
+                    // Only take one at a time. These guys are big.
+                    ConsolidationTransaction toSign = consolidationTransactions.FirstOrDefault(x => x.Status == ConsolidationTransactionStatus.Partial);
+
+                    if (toSign != null)
+                    {
+                        await this.federatedPegBroadcaster.BroadcastAsync(new RequestPartialTransactionPayload(RequestPartialTransactionPayload.ConsolidationDepositId).AddPartial(toSign.PartialTransaction));
+                        this.logger.LogDebug("Partial consolidating transaction requested for {0}.", toSign.PartialTransaction.GetHash());
+                    }
+                }
             }
         }
 

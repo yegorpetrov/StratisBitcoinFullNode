@@ -30,6 +30,9 @@ namespace Stratis.Bitcoin.Features.PoA
         void AddFederationMember(IFederationMember federationMember);
 
         void RemoveFederationMember(IFederationMember federationMember);
+
+        /// <summary>Provides federation member of this node or <c>null</c> if <see cref="IsFederationMember"/> is <c>false</c>.</summary>
+        IFederationMember GetCurrentFederationMember();
     }
 
     public abstract class FederationManagerBase : IFederationManager
@@ -58,7 +61,7 @@ namespace Stratis.Bitcoin.Features.PoA
         protected List<IFederationMember> federationMembers;
 
         /// <summary>Protects access to <see cref="federationMembers"/>.</summary>
-        private readonly object locker;
+        protected readonly object locker;
 
         public FederationManagerBase(NodeSettings nodeSettings, Network network, ILoggerFactory loggerFactory, IKeyValueRepository keyValueRepo, ISignals signals)
         {
@@ -126,25 +129,40 @@ namespace Stratis.Bitcoin.Features.PoA
             }
         }
 
+        /// <inheritdoc />
+        public IFederationMember GetCurrentFederationMember()
+        {
+            lock (this.locker)
+            {
+                return this.federationMembers.SingleOrDefault(x => x.PubKey == this.CurrentFederationKey.PubKey);
+            }
+        }
+
         public void AddFederationMember(IFederationMember federationMember)
         {
             lock (this.locker)
             {
-                if (this.federationMembers.Contains(federationMember))
-                {
-                    this.logger.LogTrace("(-)[ALREADY_EXISTS]");
-                    return;
-                }
-
-                this.federationMembers.Add(federationMember);
-
-                this.SaveFederation(this.federationMembers);
-                this.SetIsFederationMember();
-
-                this.logger.LogInformation("Federation member '{0}' was added!", federationMember);
+                this.AddFederationMemberLocked(federationMember);
             }
 
             this.signals.Publish(new FedMemberAdded(federationMember));
+        }
+
+        /// <remarks>Should be protected by <see cref="locker"/>.</remarks>
+        protected virtual void AddFederationMemberLocked(IFederationMember federationMember)
+        {
+            if (this.federationMembers.Contains(federationMember))
+            {
+                this.logger.LogTrace("(-)[ALREADY_EXISTS]");
+                return;
+            }
+
+            this.federationMembers.Add(federationMember);
+
+            this.SaveFederation(this.federationMembers);
+            this.SetIsFederationMember();
+
+            this.logger.LogInformation("Federation member '{0}' was added!", federationMember);
         }
 
         public void RemoveFederationMember(IFederationMember federationMember)

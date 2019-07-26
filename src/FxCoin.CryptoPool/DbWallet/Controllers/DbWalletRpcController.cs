@@ -92,7 +92,7 @@ namespace FxCoin.CryptoPool.DbWallet.Controllers
         }
 
         [ActionName("getbalance")]
-        public decimal GetBalance(string fromAccount, int minConfirmations = 0)
+        public decimal GetBalance(string fromAccount, int minConfirmations = 1)
         {
             int.TryParse(fromAccount, out int accountIndex);
 
@@ -120,7 +120,7 @@ namespace FxCoin.CryptoPool.DbWallet.Controllers
             }
             catch (SecurityException se)
             {
-                throw new RPCServerException(RPCErrorCode.RPC_INVALID_REQUEST, se.Message);
+                throw new RPCServerException(RPCErrorCode.RPC_WALLET_PASSPHRASE_INCORRECT, se.Message);
             }
             return true;
         }
@@ -193,6 +193,10 @@ namespace FxCoin.CryptoPool.DbWallet.Controllers
                 } : transaction.GetHash();
             }
             catch (InsufficientFundsException e)
+            {
+                throw new RPCServerException(RPCErrorCode.RPC_WALLET_INSUFFICIENT_FUNDS, e.Message);
+            }
+            catch (NotEnoughFundsException e)
             {
                 throw new RPCServerException(RPCErrorCode.RPC_WALLET_INSUFFICIENT_FUNDS, e.Message);
             }

@@ -115,7 +115,7 @@ namespace Stratis.Bitcoin.Connection
                 if (address != null)
                 {
                     peerAddresses.Add(address);
-                    this.logger.LogTrace("{0} added to the address manager.");
+                    this.logger.LogDebug("{0} added to the address manager.");
                 }
             }
 
@@ -161,7 +161,7 @@ namespace Stratis.Bitcoin.Connection
                 return false;
             }
 
-            return peerAddresses.Any(p => p.BanUntil > this.dateTimeProvider.GetUtcNow());
+            return peerAddresses.Any(p => p.IsBanned(this.dateTimeProvider.GetUtcNow()));
         }
 
         /// <inheritdoc />
