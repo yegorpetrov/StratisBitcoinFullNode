@@ -20,6 +20,7 @@
 
     public class DbWalletManager
     {
+        private static readonly object newAddressLock = new object();
         private readonly DbWalletContext dbContext;
         private readonly Network network;
         private readonly HdAddressLookup addressLookup;
@@ -99,25 +100,29 @@
             else
             {
                 DbSet<HdAddress> addresses = this.dbContext.Set<HdAddress>();
-                int idx = addresses.Count(a => a.Account.Index == accountId && a.IsChange == forChange);
-                var addressWithSpk = this.network.GenerateAddressAndSpk(account.ExtPubKey, idx, forChange);
 
-                HdAddress newAddressEntry = addresses.Add(new HdAddress
+                lock (newAddressLock)
                 {
-                    Address = addressWithSpk.address.ToString(),
-                    Account = account,
-                    IsChange = forChange,
-                    Index = idx,
-                })
-                .Entity;
+                    int idx = addresses.Count(a => a.Account.Index == accountId && a.IsChange == forChange);
+                    var addressWithSpk = this.network.GenerateAddressAndSpk(account.ExtPubKey, idx, forChange);
 
-                this.dbContext.SaveChanges();
+                    HdAddress newAddressEntry = addresses.Add(new HdAddress
+                    {
+                        Address = addressWithSpk.address.ToString(),
+                        Account = account,
+                        IsChange = forChange,
+                        Index = idx,
+                    })
+                    .Entity;
 
-                this.addressLookup[addressWithSpk.spk] = newAddressEntry.Id;
+                    this.dbContext.SaveChanges();
 
-                this.logger.LogTrace($"New address: {addressWithSpk}");
+                    this.addressLookup[addressWithSpk.spk] = newAddressEntry.Id;
 
-                return (addressWithSpk.address.ToString(), newAddressEntry.Index, addressWithSpk.spk);
+                    this.logger.LogTrace($"New address: {addressWithSpk}");
+
+                    return (addressWithSpk.address.ToString(), newAddressEntry.Index, addressWithSpk.spk);
+                }
             }
         }
 
