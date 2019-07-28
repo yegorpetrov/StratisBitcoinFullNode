@@ -45,12 +45,10 @@
 
                 this.runner.Run<DbWalletContext, NodeSettings>((ctx, settings) =>
                 {
-                    var tip = chain.Tip.Height;
-
                     var hooks = ctx.Set<TxWebhook>()
                         .Include(wh => wh.TxRef)
                         .Include(wh => wh.TxRef.Address)
-                        .Where(h => h.SendOn.HasValue && h.SendOn <= DateTime.UtcNow && h.TxRef.ArrivalBlock <= tip - settings.ConfirmationsRecommended)
+                        .Where(h => h.SendOn.HasValue && h.SendOn <= DateTime.UtcNow)
                         .OrderBy(e => e.Id)
                         .Take(MaxWebHooksAtOnce)
                         .ToArrayAsync(stoppingToken)
@@ -63,9 +61,7 @@
                     {
                         foreach (var hook in hooks)
                         {
-                            var webhookUri = settings.ConfigReader.GetOrDefault("webhookUri", string.Empty, this.logger);
-                            var webhookSecret = settings.ConfigReader.GetOrDefault("webhookSecret", string.Empty, this.logger);
-                            ProcessWebhook(client, hook, webhookUri, webhookSecret, stoppingToken).Wait();
+                            ProcessWebhook(client, hook, settings, stoppingToken).Wait();
                         }
                     }
 
@@ -104,13 +100,20 @@
             });
         }
 
-        private async Task ProcessWebhook(HttpClient client, TxWebhook hook, string baseUri, string secret, CancellationToken stoppingToken)
+        private async Task ProcessWebhook(HttpClient client, TxWebhook hook, NodeSettings settings, CancellationToken stoppingToken)
         {
+            var webhookUri = settings.ConfigReader.GetOrDefault("webhookUri", string.Empty, this.logger);
+            var webhookSecret = settings.ConfigReader.GetOrDefault("webhookSecret", string.Empty, this.logger);
+
             this.logger.LogTrace($"Processing webhook {hook.Id}");
 
-            hook.SendOn = DateTime.UtcNow + (2 * (DateTime.UtcNow - hook.Created)); // defer
+            bool confirmed = hook.TxRef.ArrivalBlock <= this.chain.Tip.Height - settings.ConfirmationsRecommended;
 
-            if (string.IsNullOrEmpty(baseUri))
+            hook.SendOn = DateTime.UtcNow + (confirmed ?
+                (2 * (DateTime.UtcNow - hook.Created)) : // defer
+                TimeSpan.FromMinutes(2));
+
+            if (string.IsNullOrEmpty(webhookUri))
             {
                 this.logger.LogWarning("Webhook uri isn't set (-webhookUri)");
                 hook.Status = "Webhook uri isn't set";
@@ -121,20 +124,21 @@
             {
                 address = hook.TxRef.Address.Address,
                 amount = new Money(hook.TxRef.Amount).ToDecimal(MoneyUnit.BTC).ToString(CultureInfo.InvariantCulture),
-                txId = hook.TxRef.TxId
+                txId = hook.TxRef.TxId,
+                status = confirmed ? "confirmed" : "unconfirmed"
             };
 
             string control;
 
             using (var sha1 = SHA1.Create())
             {
-                var bytes = Encoding.ASCII.GetBytes($"{query.address}{query.amount}{query.txId}{secret}");
+                var bytes = Encoding.ASCII.GetBytes($"{query.address}{query.amount}{query.txId}{query.status}{webhookSecret}");
                 control = string.Join(string.Empty, sha1.ComputeHash(bytes).Select(b => b.ToString("x2")));
             }
 
-            var uri = new UriBuilder(baseUri)
+            var uri = new UriBuilder(webhookUri)
             {
-                Query = $"txid={query.txId}&amount={query.amount}&address={query.address}&control={control}"
+                Query = $"txid={query.txId}&amount={query.amount}&address={query.address}&control={control}&status={query.status}"
             };
             try
             {
@@ -144,7 +148,7 @@
                     {
                         this.logger.LogTrace($"Webhook {hook.Id} has been sent");
 
-                        if (hook.TxRef.ArrivalBlock.HasValue)
+                        if (confirmed)
                         {
                             this.logger.LogTrace($"Webhook {hook.Id} has been finalized");
                             hook.SendOn = default;
