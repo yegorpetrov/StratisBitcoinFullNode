@@ -103,7 +103,12 @@
 
                 lock (newAddressLock)
                 {
-                    int idx = addresses.Count(a => a.Account.Index == accountId && a.IsChange == forChange);
+                    int idx = 0;
+                    if (addresses.Any())
+                    {
+                        idx = addresses.Count(a => a.Account.Index == accountId && a.IsChange == forChange);
+                    }
+                   
                     var addressWithSpk = this.network.GenerateAddressAndSpk(account.ExtPubKey, idx, forChange);
 
                     HdAddress newAddressEntry = addresses.Add(new HdAddress
