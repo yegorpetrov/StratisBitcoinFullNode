@@ -17,6 +17,7 @@ using Stratis.Bitcoin.Features.Wallet.Interfaces;
 using Stratis.Bitcoin.Interfaces;
 using Stratis.Bitcoin.Mining;
 using Stratis.Bitcoin.Utilities;
+using TracerAttributes;
 
 namespace Stratis.Bitcoin.Features.PoA
 {
@@ -50,7 +51,7 @@ namespace Stratis.Bitcoin.Features.PoA
         /// <summary>
         /// A cancellation token source that can cancel the mining processes and is linked to the <see cref="INodeLifetime.ApplicationStopping"/>.
         /// </summary>
-        private CancellationTokenSource cancellation;
+        private readonly CancellationTokenSource cancellation;
 
         private readonly IInitialBlockDownloadState ibdState;
 
@@ -73,6 +74,7 @@ namespace Stratis.Bitcoin.Features.PoA
         private readonly VotingDataEncoder votingDataEncoder;
 
         private readonly PoAMinerSettings settings;
+
         private readonly IAsyncProvider asyncProvider;
 
         private Task miningTask;
@@ -115,7 +117,7 @@ namespace Stratis.Bitcoin.Features.PoA
             this.cancellation = CancellationTokenSource.CreateLinkedTokenSource(new[] { nodeLifetime.ApplicationStopping });
             this.votingDataEncoder = new VotingDataEncoder(loggerFactory);
 
-            nodeStats.RegisterStats(this.AddComponentStats, StatsType.Component);
+            nodeStats.RegisterStats(this.AddComponentStats, StatsType.Component, this.GetType().Name);
         }
 
         /// <inheritdoc />
@@ -147,7 +149,7 @@ namespace Stratis.Bitcoin.Features.PoA
                         continue;
                     }
 
-                    uint miningTimestamp =  await this.WaitUntilMiningSlotAsync().ConfigureAwait(false);
+                    uint miningTimestamp = await this.WaitUntilMiningSlotAsync().ConfigureAwait(false);
 
                     ChainedHeader chainedHeader = await this.MineBlockAtTimestampAsync(miningTimestamp).ConfigureAwait(false);
 
@@ -165,10 +167,21 @@ namespace Stratis.Bitcoin.Features.PoA
                 catch (OperationCanceledException)
                 {
                 }
-                // TODO: Find a better way to do this.
-                catch (ConsensusErrorException ce) when (ce.ConsensusError.Code == "invalid-collateral-amount")
+                catch (ConsensusErrorException ce)
                 {
-                    this.logger.LogInformation("Miner failed to mine block due to: '{0}'.", ce.ConsensusError.Message);
+                    // Text from PosMinting:
+                    // All consensus exceptions should be ignored. It means that the miner
+                    // ran into problems while constructing block or verifying it
+                    // but it should not halt the mining operation.
+                    this.logger.LogWarning("Miner failed to mine block due to: '{0}'.", ce.ConsensusError.Message);
+                }
+                catch (ConsensusException ce)
+                {
+                    // Text from PosMinting:
+                    // All consensus exceptions (including translated ConsensusErrorException) should be ignored. It means that the miner
+                    // ran into problems while constructing block or verifying it
+                    // but it should not halt the mining operation.
+                    this.logger.LogWarning("Miner failed to mine block due to: '{0}'.", ce.Message);
                 }
                 catch (Exception exception)
                 {
@@ -328,6 +341,7 @@ namespace Stratis.Bitcoin.Features.PoA
             blockTemplate.Block.Transactions[0].AddOutput(Money.Zero, votingOutputScript);
         }
 
+        [NoTrace]
         private void AddComponentStats(StringBuilder log)
         {
             log.AppendLine();

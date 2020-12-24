@@ -16,8 +16,8 @@ using Stratis.Bitcoin.Networks;
 using Stratis.Bitcoin.Signals;
 using Stratis.Bitcoin.Tests.Common;
 using Stratis.Bitcoin.Utilities;
-using Stratis.Features.FederatedPeg.Collateral;
-using Stratis.Features.FederatedPeg.CounterChain;
+using Stratis.Features.Collateral;
+using Stratis.Features.Collateral.CounterChain;
 using Stratis.Features.FederatedPeg.Tests.Utils;
 using Stratis.Sidechains.Networks;
 using Xunit;
@@ -41,9 +41,9 @@ namespace Stratis.Features.FederatedPeg.Tests
 
             this.collateralFederationMembers = new List<CollateralFederationMember>()
             {
-                new CollateralFederationMember(new PubKey("036317d97f911ce899fd0a360866d19f2dca5252c7960d4652d814ab155a8342de"), new Money(100), "addr1"),
-                new CollateralFederationMember(new PubKey("02a08d72d47b3103261163c15aa2f6b0d007e1872ad9f5fddbfbd27bdb738156e9"), new Money(500), "addr2"),
-                new CollateralFederationMember(new PubKey("03634c79d4e8e915cfb9f7bbef57bed32d715150836b7845b1a14c93670d816ab6"), new Money(100_000), "addr3")
+                new CollateralFederationMember(new PubKey("036317d97f911ce899fd0a360866d19f2dca5252c7960d4652d814ab155a8342de"), false, new Money(100), "addr1"),
+                new CollateralFederationMember(new PubKey("02a08d72d47b3103261163c15aa2f6b0d007e1872ad9f5fddbfbd27bdb738156e9"), false, new Money(500), "addr2"),
+                new CollateralFederationMember(new PubKey("03634c79d4e8e915cfb9f7bbef57bed32d715150836b7845b1a14c93670d816ab6"), false, new Money(100_000), "addr3")
             };
 
             List<IFederationMember> federationMembers = (network.Consensus.Options as PoAConsensusOptions).GenesisFederationMembers;
@@ -52,7 +52,7 @@ namespace Stratis.Features.FederatedPeg.Tests
 
             FederatedPegSettings fedPegSettings = FedPegTestsHelper.CreateSettings(network, out NodeSettings nodeSettings);
 
-            CounterChainSettings settings = new CounterChainSettings(nodeSettings, new CounterChainNetworkWrapper(Networks.Stratis.Regtest()));
+            CounterChainSettings settings = new CounterChainSettings(nodeSettings, Networks.Stratis.Regtest());
             var asyncMock = new Mock<IAsyncProvider>();
             asyncMock.Setup(a => a.RegisterTask(It.IsAny<string>(), It.IsAny<Task>()));
 
@@ -61,7 +61,7 @@ namespace Stratis.Features.FederatedPeg.Tests
 
             fedManager.Initialize();
 
-            this.collateralChecker = new CollateralChecker(loggerFactory, clientFactory, settings, fedManager, signals, network, asyncMock.Object);
+            this.collateralChecker = new CollateralChecker(loggerFactory, clientFactory, settings, fedManager, signals, network, asyncMock.Object, (new Mock<INodeLifetime>()).Object);
         }
 
         [Fact]
@@ -80,9 +80,8 @@ namespace Stratis.Features.FederatedPeg.Tests
         {
             var blockStoreClientMock = new Mock<IBlockStoreClient>();
 
-            var collateralData = new VerboseAddressBalancesResult()
+            var collateralData = new VerboseAddressBalancesResult(this.collateralCheckHeight + 1000)
             {
-                ConsensusTipHeight = this.collateralCheckHeight + 1000,
                 BalancesData = new List<AddressIndexerData>()
                 {
                     new AddressIndexerData()

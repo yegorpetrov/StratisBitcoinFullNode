@@ -25,8 +25,8 @@ namespace Stratis.Bitcoin.Controllers.Models
             this.Hex = trx?.ToHex();
         }
 
-        /// <summary>The hashed transaction.</summary>
-        [JsonProperty(Order = 0, PropertyName = "hex")]
+        /// <summary>The transaction in hexadecimal format.</summary>
+        [JsonProperty(Order = 0, PropertyName = "hex", NullValueHandling = NullValueHandling.Ignore)]
         public string Hex { get; set; }
 
         public override string ToString()
@@ -73,9 +73,13 @@ namespace Stratis.Bitcoin.Controllers.Models
                 this.TxId = trx.GetHash().ToString();
                 this.Hash = trx.HasWitness ? trx.GetWitHash().ToString() : trx.GetHash().ToString();
                 this.Size = trx.GetSerializedSize();
-                this.VSize = trx.HasWitness ? trx.GetVirtualSize() : trx.GetSerializedSize();
+                this.VSize = trx.HasWitness ? trx.GetVirtualSize(network.Consensus.Options.WitnessScaleFactor) : trx.GetSerializedSize();
                 this.Version = trx.Version;
                 this.LockTime = trx.LockTime;
+
+                // size = (weight + WITNESS_SCALE_FACTOR - 1) / WITNESS_SCALE_FACTOR;
+                // hence, weight = size * WITNESS_SCALE_FACTOR - (WITNESS_SCALE_FACTOR - 1) (only subtract if has witness).
+                this.Weight = this.VSize * network.Consensus.Options.WitnessScaleFactor - (network.Consensus.Options.WitnessScaleFactor - 1);
 
                 this.VIn = trx.Inputs.Select(txin => new Vin(txin.PrevOut, txin.Sequence, txin.ScriptSig)).ToList();
 
@@ -211,7 +215,7 @@ namespace Stratis.Bitcoin.Controllers.Models
         /// </summary>
         /// <param name="n">The index of the output.</param>
         /// <param name="txout">A <see cref="TxOut"/></param>
-        /// <param name="network">The network where the transaction occured.</param>
+        /// <param name="network">The network where the transaction occurred.</param>
         public Vout(int n, TxOut txout, Network network)
         {
             this.N = n;

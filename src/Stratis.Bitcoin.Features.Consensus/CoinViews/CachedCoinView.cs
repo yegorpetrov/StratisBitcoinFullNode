@@ -6,7 +6,7 @@ using System.Text;
 using System.Threading;
 using Microsoft.Extensions.Logging;
 using NBitcoin;
-using Stratis.Bitcoin.Consensus;
+using Stratis.Bitcoin.Configuration.Settings;
 using Stratis.Bitcoin.Features.Consensus.ProvenBlockHeaders;
 using Stratis.Bitcoin.Utilities;
 using TracerAttributes;
@@ -54,9 +54,6 @@ namespace Stratis.Bitcoin.Features.Consensus.CoinViews
             new uint256("e3bf3d07d4b0375638d5f1db5255fe07ba2c4cb067cd81b84ee974b6585fb468"),
             new uint256("d5d27987d2a3dfc724e359870c6644b40e497bdc0589a033220fe15429d88599")
         };
-
-        /// <summary>Default maximum number of transactions in the cache.</summary>
-        public const int CacheMaxItemsDefault = 100000;
 
         /// <summary>Length of the coinview cache flushing interval in seconds.</summary>
         /// <seealso cref="lastCacheFlushTime"/>
@@ -115,11 +112,6 @@ namespace Stratis.Bitcoin.Features.Consensus.CoinViews
         /// <summary>Provider of time functions.</summary>
         private readonly IDateTimeProvider dateTimeProvider;
 
-        /// <summary>
-        /// Network checkpoints
-        /// </summary>
-        private readonly ICheckpoints checkpoints;
-
         /// <summary>Time of the last cache flush.</summary>
         private DateTime lastCacheFlushTime;
 
@@ -134,11 +126,11 @@ namespace Stratis.Bitcoin.Features.Consensus.CoinViews
         /// <param name="dateTimeProvider">Provider of time functions.</param>
         /// <param name="loggerFactory">Factory to be used to create logger for the puller.</param>
         /// <param name="nodeStats">The node stats.</param>
-        /// <param name="checkpoints">Network checkpoints.</param>
+        /// <param name="consensusSettings">Settings for the consensus feature.</param>
         /// <param name="stakeChainStore">Storage of POS block information.</param>
         /// <param name="rewindDataIndexCache">Rewind data index store.</param>
-        public CachedCoinView(DBreezeCoinView inner, IDateTimeProvider dateTimeProvider, ILoggerFactory loggerFactory, INodeStats nodeStats, ICheckpoints checkpoints, StakeChainStore stakeChainStore = null, IRewindDataIndexCache rewindDataIndexCache = null) :
-            this(dateTimeProvider, loggerFactory, nodeStats, checkpoints, stakeChainStore, rewindDataIndexCache)
+        public CachedCoinView(DBreezeCoinView inner, IDateTimeProvider dateTimeProvider, ILoggerFactory loggerFactory, INodeStats nodeStats, ConsensusSettings consensusSettings, StakeChainStore stakeChainStore = null, IRewindDataIndexCache rewindDataIndexCache = null) :
+            this(dateTimeProvider, loggerFactory, nodeStats, consensusSettings, stakeChainStore, rewindDataIndexCache)
         {
             Guard.NotNull(inner, nameof(inner));
             this.inner = inner;
@@ -151,15 +143,15 @@ namespace Stratis.Bitcoin.Features.Consensus.CoinViews
         /// <param name="dateTimeProvider">Provider of time functions.</param>
         /// <param name="loggerFactory">Factory to be used to create logger for the puller.</param>
         /// <param name="nodeStats">The node stats.</param>
-        /// <param name="checkpoints">Network checkpoints.</param>
+        /// <param name="consensusSettings">Settings for the consensus feature.</param>
         /// <param name="stakeChainStore">Storage of POS block information.</param>
         /// <param name="rewindDataIndexCache">Rewind data index store.</param>
         /// <remarks>
         /// This is used for testing the coinview.
         /// It allows a coin view that only has in-memory entries.
         /// </remarks>
-        public CachedCoinView(InMemoryCoinView inner, IDateTimeProvider dateTimeProvider, ILoggerFactory loggerFactory, INodeStats nodeStats, ICheckpoints checkpoints, StakeChainStore stakeChainStore = null, IRewindDataIndexCache rewindDataIndexCache = null) :
-            this(dateTimeProvider, loggerFactory, nodeStats, checkpoints, stakeChainStore, rewindDataIndexCache)
+        public CachedCoinView(InMemoryCoinView inner, IDateTimeProvider dateTimeProvider, ILoggerFactory loggerFactory, INodeStats nodeStats, ConsensusSettings consensusSettings, StakeChainStore stakeChainStore = null, IRewindDataIndexCache rewindDataIndexCache = null) :
+            this(dateTimeProvider, loggerFactory, nodeStats, consensusSettings, stakeChainStore, rewindDataIndexCache)
         {
             Guard.NotNull(inner, nameof(inner));
             this.inner = inner;
@@ -171,17 +163,16 @@ namespace Stratis.Bitcoin.Features.Consensus.CoinViews
         /// <param name="dateTimeProvider">Provider of time functions.</param>
         /// <param name="loggerFactory">Factory to be used to create logger for the puller.</param>
         /// <param name="nodeStats">The node stats.</param>
-        /// <param name="checkpoints">Network checkpoints.</param>
+        /// <param name="consensusSettings">Settings for the consensus feature.</param>
         /// <param name="stakeChainStore">Storage of POS block information.</param>
         /// <param name="rewindDataIndexCache">Rewind data index store.</param>
-        private CachedCoinView(IDateTimeProvider dateTimeProvider, ILoggerFactory loggerFactory, INodeStats nodeStats, ICheckpoints checkpoints, StakeChainStore stakeChainStore = null, IRewindDataIndexCache rewindDataIndexCache = null)
+        private CachedCoinView(IDateTimeProvider dateTimeProvider, ILoggerFactory loggerFactory, INodeStats nodeStats, ConsensusSettings consensusSettings, StakeChainStore stakeChainStore = null, IRewindDataIndexCache rewindDataIndexCache = null)
         {
             this.logger = loggerFactory.CreateLogger(this.GetType().FullName);
             this.dateTimeProvider = dateTimeProvider;
-            this.checkpoints = checkpoints;
             this.stakeChainStore = stakeChainStore;
             this.rewindDataIndexCache = rewindDataIndexCache;
-            this.MaxItems = CacheMaxItemsDefault;
+            this.MaxItems = consensusSettings.MaxCoinViewCacheItems;
             this.lockobj = new object();
             this.cachedUtxoItems = new Dictionary<uint256, CacheItem>();
             this.performanceCounter = new CachePerformanceCounter(this.dateTimeProvider);
@@ -189,7 +180,7 @@ namespace Stratis.Bitcoin.Features.Consensus.CoinViews
             this.cachedRewindDataIndex = new SortedDictionary<int, RewindData>();
             this.random = new Random();
 
-            nodeStats.RegisterStats(this.AddBenchStats, StatsType.Benchmark, 300);
+            nodeStats.RegisterStats(this.AddBenchStats, StatsType.Benchmark, this.GetType().Name, 300);
         }
 
         /// <inheritdoc />
@@ -329,10 +320,7 @@ namespace Stratis.Bitcoin.Features.Consensus.CoinViews
                     u.Value.ExistInInner = true;
                 }
 
-                List<RewindData> rewindDataBeyondLastCheckpoint = this.cachedRewindDataIndex
-                    .SkipWhile(c => c.Key <= this.checkpoints.GetLastCheckpointHeight())
-                    .Select(c => c.Value).ToList();
-                this.Inner.SaveChanges(unspent.Select(u => u.Value.UnspentOutputs).ToArray(), null, this.innerBlockHash, this.blockHash, 0, rewindDataBeyondLastCheckpoint);
+                this.Inner.SaveChanges(unspent.Select(u => u.Value.UnspentOutputs).ToArray(), null, this.innerBlockHash, this.blockHash, 0, this.cachedRewindDataIndex.Select(c => c.Value).ToList());
 
                 // Remove prunable entries from cache as they were flushed down.
                 IEnumerable<KeyValuePair<uint256, CacheItem>> prunableEntries = unspent.Where(c => (c.Value.UnspentOutputs != null) && c.Value.UnspentOutputs.IsPrunable);

@@ -59,6 +59,8 @@ namespace Stratis.Bitcoin.Features.RPC
             builder.AppendLine("#rpcbind=127.0.0.1");
             builder.AppendLine("#Ip address allowed to connect to RPC (default all: 0.0.0.0 and ::)");
             builder.AppendLine("#rpcallowip=127.0.0.1");
+            builder.AppendLine("#Adjust RPC Content Type (default: application/json; charset=utf-8)");
+            builder.AppendLine("#rpccontenttype=application/json; charset=utf-8");
         }
 
         public override Task InitializeAsync()
@@ -134,11 +136,8 @@ namespace Stratis.Bitcoin.Features.RPC
 
             fullNodeBuilder.ConfigureServices(service =>
             {
-                service.AddSingleton<FullNodeController>();
-                service.AddSingleton<ConnectionManagerController>();
                 service.AddSingleton<RpcSettings>();
                 service.AddSingleton<IRPCClientFactory, RPCClientFactory>();
-                service.AddSingleton<RPCController>();
             });
 
             return fullNodeBuilder;

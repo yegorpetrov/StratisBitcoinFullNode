@@ -26,6 +26,7 @@ namespace Stratis.Bitcoin.Features.Wallet
 
             int change = isChange ? 1 : 0;
             var keyPath = new KeyPath($"{change}/{index}");
+            // TODO: Should probably explicitly be passing the network into Parse
             ExtPubKey extPubKey = ExtPubKey.Parse(accountExtPubKey).Derive(keyPath);
             return extPubKey.PubKey;
         }
@@ -37,7 +38,6 @@ namespace Stratis.Bitcoin.Features.Wallet
         /// <param name="chainCode">The chain code used in creating the extended private key.</param>
         /// <param name="hdPath">The HD path of the account for which to get the extended private key.</param>
         /// <param name="network">The network for which to generate this extended private key.</param>
-        /// <returns></returns>
         [NoTrace]
         public static ISecret GetExtendedPrivateKey(Key privateKey, byte[] chainCode, string hdPath, Network network)
         {
@@ -159,8 +159,7 @@ namespace Stratis.Bitcoin.Features.Wallet
             if (pathElements.Length < 3)
                 throw new FormatException($"Could not parse CoinType from HdPath {hdPath}.");
 
-            int coinType = 0;
-            if (int.TryParse(pathElements[2].Replace("'", string.Empty), out coinType))
+            if (int.TryParse(pathElements[2].Replace("'", string.Empty), out int coinType))
             {
                 return coinType;
             }
@@ -184,8 +183,7 @@ namespace Stratis.Bitcoin.Features.Wallet
             if (hdPathParts.Length < 5)
                 throw new FormatException($"Could not parse value from HdPath {hdPath}.");
 
-            int result = 0;
-            if (int.TryParse(hdPathParts[4], out result))
+            if (int.TryParse(hdPathParts[4], out int result))
             {
                 return result == 1;
             }

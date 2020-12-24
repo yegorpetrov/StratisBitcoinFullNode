@@ -2,10 +2,10 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.Extensions.Logging;
+using Stratis.Bitcoin;
 using Stratis.Bitcoin.Features.PoA;
 using Stratis.Bitcoin.Utilities;
 using Stratis.Bitcoin.Utilities.JsonErrors;
@@ -24,6 +24,7 @@ namespace Stratis.Features.FederatedPeg.Controllers
     /// <summary>
     /// API used to communicate across to the counter chain.
     /// </summary>
+    [ApiVersion("1")]
     [Route("api/[controller]")]
     public class FederationGatewayController : Controller
     {
@@ -57,9 +58,15 @@ namespace Stratis.Features.FederatedPeg.Controllers
         /// </summary>
         /// <param name="blockRequest">Last known block height and the maximum number of blocks to send.</param>
         /// <returns><see cref="IActionResult"/>OK on success.</returns>
+        /// <response code="200">Returns blocks deposits</response>
+        /// <response code="400">Invalid request or blocks are not mature</response>
+        /// <response code="500">Request is null</response>
         [Route(FederationGatewayRouteEndPoint.GetMaturedBlockDeposits)]
         [HttpPost]
-        public async Task<IActionResult> GetMaturedBlockDepositsAsync([FromBody] MaturedBlockRequestModel blockRequest)
+        [ProducesResponseType((int)HttpStatusCode.OK)]
+        [ProducesResponseType((int)HttpStatusCode.BadRequest)]
+        [ProducesResponseType((int)HttpStatusCode.InternalServerError)]
+        public IActionResult GetMaturedBlockDeposits([FromBody] MaturedBlockRequestModel blockRequest)
         {
             Guard.NotNull(blockRequest, nameof(blockRequest));
 
@@ -71,16 +78,8 @@ namespace Stratis.Features.FederatedPeg.Controllers
 
             try
             {
-                Result<List<MaturedBlockDepositsModel>> depositsResult = await this.maturedBlocksProvider.GetMaturedDepositsAsync(
-                    blockRequest.BlockHeight, blockRequest.MaxBlocksToSend).ConfigureAwait(false);
-
-                if (depositsResult.IsSuccess)
-                {
-                    return this.Json(depositsResult.Value);
-                }
-
-                this.logger.LogDebug("Error calling /api/FederationGateway/{0}: {1}.", FederationGatewayRouteEndPoint.GetMaturedBlockDeposits, depositsResult.Error);
-                return ErrorHelpers.BuildErrorResponse(HttpStatusCode.BadRequest, $"Could not re-sync matured block deposits: {depositsResult.Error}", depositsResult.Error);
+                SerializableResult<List<MaturedBlockDepositsModel>> depositsResult = this.maturedBlocksProvider.GetMaturedDeposits(blockRequest.BlockHeight, blockRequest.MaxBlocksToSend);
+                return this.Json(depositsResult);
             }
             catch (Exception e)
             {
@@ -93,8 +92,12 @@ namespace Stratis.Features.FederatedPeg.Controllers
         /// Gets some info on the state of the federation.
         /// </summary>
         /// <returns>A <see cref="FederationGatewayInfoModel"/> with information about the federation.</returns>
+        /// <response code="200">Returns federation info</response>
+        /// <response code="400">Unexpected exception occurred</response>
         [Route(FederationGatewayRouteEndPoint.GetInfo)]
         [HttpGet]
+        [ProducesResponseType((int)HttpStatusCode.OK)]
+        [ProducesResponseType((int)HttpStatusCode.BadRequest)]
         public IActionResult GetInfo()
         {
             try
@@ -108,8 +111,8 @@ namespace Stratis.Features.FederatedPeg.Controllers
                     FederationNodeIpEndPoints = this.federatedPegSettings.FederationNodeIpEndPoints.Select(i => $"{i.Address}:{i.Port}"),
                     MultisigPublicKey = this.federatedPegSettings.PublicKey,
                     FederationMultisigPubKeys = this.federatedPegSettings.FederationPublicKeys.Select(k => k.ToString()),
-                    MiningPublicKey =  isMainchain ? null : this.federationManager.CurrentFederationKey?.PubKey.ToString(),
-                    FederationMiningPubKeys =  isMainchain ? null : this.federationManager.GetFederationMembers().Select(k => k.ToString()),
+                    MiningPublicKey = isMainchain ? null : this.federationManager.CurrentFederationKey?.PubKey.ToString(),
+                    FederationMiningPubKeys = isMainchain ? null : this.federationManager.GetFederationMembers().Select(k => k.ToString()),
                     MultiSigAddress = this.federatedPegSettings.MultiSigAddress,
                     MultiSigRedeemScript = this.federatedPegSettings.MultiSigRedeemScript.ToString(),
                     MinimumDepositConfirmations = this.federatedPegSettings.MinimumDepositConfirmations

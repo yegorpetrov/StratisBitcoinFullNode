@@ -5,6 +5,9 @@ using NBitcoin;
 using NBitcoin.BouncyCastle.Math;
 using NBitcoin.DataEncoders;
 using NBitcoin.Protocol;
+using Stratis.Bitcoin.Features.Consensus.Rules.CommonRules;
+using Stratis.Bitcoin.Features.Consensus.Rules.ProvenHeaderRules;
+using Stratis.Bitcoin.Features.MemoryPool.Rules;
 using Stratis.Bitcoin.Networks.Deployments;
 using Stratis.Bitcoin.Networks.Policies;
 
@@ -44,6 +47,7 @@ namespace Stratis.Bitcoin.Networks
             this.DefaultMaxInboundConnections = 109;
             this.DefaultRPCPort = 16174;
             this.DefaultAPIPort = 37221;
+            this.DefaultSignalRPort = 38824;
             this.MaxTipAge = 2 * 60 * 60;
             this.MinTxFee = 10000;
             this.FallbackFee = 10000;
@@ -52,6 +56,7 @@ namespace Stratis.Bitcoin.Networks
             this.DefaultConfigFilename = StratisDefaultConfigFilename;
             this.MaxTimeOffsetSeconds = 25 * 60;
             this.CoinTicker = "STRAT";
+            this.DefaultBanTimeSeconds = 16000; // 500 (MaxReorg) * 64 (TargetSpacing) / 2 = 4 hours, 26 minutes and 40 seconds
 
             var consensusFactory = new PosConsensusFactory();
 
@@ -84,9 +89,10 @@ namespace Stratis.Bitcoin.Networks
 
             var bip9Deployments = new StratisBIP9Deployments()
             {
-                [StratisBIP9Deployments.ColdStaking] = new BIP9DeploymentsParameters(2,
-                    new DateTime(2018, 12, 1, 0, 0, 0, DateTimeKind.Utc),
-                    new DateTime(2019, 12, 1, 0, 0, 0, DateTimeKind.Utc))
+                [StratisBIP9Deployments.ColdStaking] = new BIP9DeploymentsParameters("ColdStaking", 2,
+                    new DateTime(2019, 12, 2, 0, 0, 0, DateTimeKind.Utc),
+                    new DateTime(2020, 12, 2, 0, 0, 0, DateTimeKind.Utc),
+                    BIP9DeploymentsParameters.DefaultMainnetThreshold)
             };
 
             this.Consensus = new NBitcoin.Consensus(
@@ -101,10 +107,9 @@ namespace Stratis.Bitcoin.Networks
                 buriedDeployments: buriedDeployments,
                 bip9Deployments: bip9Deployments,
                 bip34Hash: new uint256("0x000000000000024b89b42a942fe0d9fea3bb44ab7bd1b19115dd6a759c0808b8"),
-                ruleChangeActivationThreshold: 1916, // 95% of 2016
                 minerConfirmationWindow: 2016, // nPowTargetTimespan / nPowTargetSpacing
                 maxReorgLength: 500,
-                defaultAssumeValid: new uint256("0x50497017e7bb256df205fcbc2caccbe5b516cb33491e1a11737a3bfe83959b9f"), // 1213518
+                defaultAssumeValid: new uint256("0x6ad909469bc8fa15f48533fd30ae3217fceca413c0df69cf4ac314188f4df1c4"), // 1600000
                 maxMoney: long.MaxValue,
                 coinbaseMaturity: 50,
                 premineHeight: 2,
@@ -170,7 +175,9 @@ namespace Stratis.Bitcoin.Networks
                 { 850000, new CheckpointInfo(new uint256("0xc3a249b01795b22858aa00fd0973471fcd769a14f4f9cf0abe6651ac3e6ade19"), new uint256("0x5de8766ed4cfcc3ce9d74f38196596c6f91b9ff62cbd20abbfa991dca54d2bd4")) },
                 { 1000000, new CheckpointInfo(new uint256("0x3cdd812d9a7e249e7ad825cb372fbb0889f5b515a4a924a4aa3281d8e334d559"), new uint256("0x36a51839ceb5866b3251c9e5e0049a0209fe0b1861b2ada118fe00a8cacf62df")) },
                 { 1150000, new CheckpointInfo(new uint256("0x2bdb553600592655dd50f0d2e1632e5ac3bad99a5e1864f8b8ac02f768721e17"), new uint256("0x0ae7676da03bee9c8005680058a06b8a5009fb584d84811fc29ae1aeb7665426")) }, // 13-01-2019
-                { 1344000, new CheckpointInfo(new uint256("0xb7196b5b1982bc671f4e631661c09019aaf27b85902790d3d61616c245c407be"), new uint256("0xb7af5aaeb28d6ceebe872567a835efc42b3f2fccbecf74b1e095272b560d0354")) }
+                { 1344000, new CheckpointInfo(new uint256("0xb7196b5b1982bc671f4e631661c09019aaf27b85902790d3d61616c245c407be"), new uint256("0xb7af5aaeb28d6ceebe872567a835efc42b3f2fccbecf74b1e095272b560d0354")) },
+                { 1450000, new CheckpointInfo(new uint256("0x040bdceb331aa6adefb418ded32dccb7338fe538a8cce5303cb6eec2aa6644c7"), new uint256("0x7af96688dd0009d12619f83e0ad8adc0c1de1998ce802193fdd81b7f464d0a9e")) },
+                { 1620000, new CheckpointInfo(new uint256("0xee112d326d0fa2d0ca1009d8c00bfe4fd4a5961dd317162df21e83c80b519479"), new uint256("0xe0a85aac292b6216331d58acd9c55b104dd4769c051dfbd6d2496f19bf0e8d38")) }
             };
 
             this.Bech32Encoders = new Bech32Encoder[2];
@@ -183,30 +190,93 @@ namespace Stratis.Bitcoin.Networks
 
             this.DNSSeeds = new List<DNSSeedData>
             {
-                new DNSSeedData("mainnet1.stratisplatform.com", "mainnet1.stratisplatform.com"),
-                new DNSSeedData("mainnet2.stratisnetwork.com", "mainnet2.stratisnetwork.com"),
-                new DNSSeedData("mainnet3.stratisplatform.com", "mainnet3.stratisplatform.com"),
-                new DNSSeedData("mainnet4.stratisnetwork.com", "mainnet4.stratisnetwork.com")
+                new DNSSeedData("mainnet1.stratisnetwork.com", "mainnet1.stratisnetwork.com"),
+                new DNSSeedData("mainnet2.stratisnetwork.com", "mainnet2.stratisnetwork.com")
             };
 
             this.SeedNodes = new List<NetworkAddress>
             {
-                new NetworkAddress(IPAddress.Parse("51.140.231.125"), 16178), // danger cloud node
-                new NetworkAddress(IPAddress.Parse("13.70.81.5"), 16178), // beard cloud node
-                new NetworkAddress(IPAddress.Parse("191.235.85.131"), 16178), // fassa cloud node
-                new NetworkAddress(IPAddress.Parse("46.22.163.55"), 16178), // majic public node
-                new NetworkAddress(IPAddress.Parse("86.173.103.49"), 16178 ), // lukasz public node
+                new NetworkAddress(IPAddress.Parse("138.68.145.243"), 16178), // dan public node
+                new NetworkAddress(IPAddress.Parse("169.1.13.216"), 16178),
+                new NetworkAddress(IPAddress.Parse("213.125.242.234"), 16178),
+                new NetworkAddress(IPAddress.Parse("45.58.55.21"), 16178),
 
-                new NetworkAddress(IPAddress.Parse("137.116.46.151"), 16178), // public node
-                new NetworkAddress(IPAddress.Parse("40.78.80.159"), 16178), // public node
-                new NetworkAddress(IPAddress.Parse("52.151.86.242"), 16178), // public node
-                new NetworkAddress(IPAddress.Parse("40.74.67.242"), 16178), // public node
             };
 
             this.StandardScriptsRegistry = new StratisStandardScriptsRegistry();
 
+            // 64 below should be changed to TargetSpacingSeconds when we move that field.
+            Assert(this.DefaultBanTimeSeconds <= this.Consensus.MaxReorgLength * 64 / 2);
             Assert(this.Consensus.HashGenesisBlock == uint256.Parse("0x0000066e91e46e5a264d42c89e1204963b2ee6be230b443e9159020539d972af"));
             Assert(this.Genesis.Header.HashMerkleRoot == uint256.Parse("0x65a26bc20b0351aebf05829daefa8f7db2f800623439f3c114257c91447f1518"));
+
+            this.RegisterRules(this.Consensus);
+            this.RegisterMempoolRules(this.Consensus);
+        }
+
+        protected void RegisterRules(IConsensus consensus)
+        {
+            consensus.ConsensusRules
+                .Register<HeaderTimeChecksRule>()
+                .Register<HeaderTimeChecksPosRule>()
+                .Register<StratisBugFixPosFutureDriftRule>()
+                .Register<CheckDifficultyPosRule>()
+                .Register<StratisHeaderVersionRule>()
+                .Register<ProvenHeaderSizeRule>()
+                .Register<ProvenHeaderCoinstakeRule>();
+
+            consensus.ConsensusRules
+                .Register<BlockMerkleRootRule>()
+                .Register<PosBlockSignatureRepresentationRule>()
+                .Register<PosBlockSignatureRule>();
+
+            consensus.ConsensusRules
+                .Register<SetActivationDeploymentsPartialValidationRule>()
+                .Register<PosTimeMaskRule>()
+
+                // rules that are inside the method ContextualCheckBlock
+                .Register<TransactionLocktimeActivationRule>()
+                .Register<CoinbaseHeightActivationRule>()
+                .Register<WitnessCommitmentsRule>()
+                .Register<BlockSizeRule>()
+
+                // rules that are inside the method CheckBlock
+                .Register<EnsureCoinbaseRule>()
+                .Register<CheckPowTransactionRule>()
+                .Register<CheckPosTransactionRule>()
+                .Register<CheckSigOpsRule>()
+                .Register<PosCoinstakeRule>();
+
+            consensus.ConsensusRules
+                .Register<SetActivationDeploymentsFullValidationRule>()
+
+                .Register<CheckDifficultyHybridRule>()
+
+                // rules that require the store to be loaded (coinview)
+                .Register<LoadCoinviewRule>()
+                .Register<TransactionDuplicationActivationRule>()
+                .Register<PosCoinviewRule>() // implements BIP68, MaxSigOps and BlockReward calculation
+                                             // Place the PosColdStakingRule after the PosCoinviewRule to ensure that all input scripts have been evaluated
+                                             // and that the "IsColdCoinStake" flag would have been set by the OP_CHECKCOLDSTAKEVERIFY opcode if applicable.
+                .Register<PosColdStakingRule>()
+                .Register<SaveCoinviewRule>();
+        }
+
+        protected void RegisterMempoolRules(IConsensus consensus)
+        {
+            consensus.MempoolRules = new List<Type>()
+            {
+                typeof(CheckConflictsMempoolRule),
+                typeof(CheckCoinViewMempoolRule),
+                typeof(CreateMempoolEntryMempoolRule),
+                typeof(CheckSigOpsMempoolRule),
+                typeof(CheckFeeMempoolRule),
+                typeof(CheckRateLimitMempoolRule),
+                typeof(CheckAncestorsMempoolRule),
+                typeof(CheckReplacementMempoolRule),
+                typeof(CheckAllInputsMempoolRule),
+                typeof(CheckTxOutDustRule)
+            };
         }
 
         protected static Block CreateStratisGenesisBlock(ConsensusFactory consensusFactory, uint nTime, uint nNonce, uint nBits, int nVersion, Money genesisReward)

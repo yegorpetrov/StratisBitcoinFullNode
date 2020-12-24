@@ -28,7 +28,7 @@ namespace FxCoin.CryptoPool.DbWallet
             this.runner = runner;
             this._logger = logger;
             this._network = network;
-            nodeStats.RegisterStats(AddComponentStats, StatsType.Component);
+            nodeStats.RegisterStats(AddComponentStats, StatsType.Component, "DbWallet");
         }
 
         private void AddComponentStats(StringBuilder statsBuilder)

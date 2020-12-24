@@ -2,11 +2,14 @@
 using System.IO;
 using System.Net;
 using System.Text;
+using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Logging;
 using Moq;
+using Newtonsoft.Json.Linq;
 using Stratis.Bitcoin.Configuration;
+using Stratis.Bitcoin.Networks;
 using Stratis.Bitcoin.Tests.Common.Logging;
 using Xunit;
 
@@ -16,15 +19,16 @@ namespace Stratis.Bitcoin.Features.RPC.Tests
     {
         private Mock<IRPCAuthorization> authorization;
         private Mock<RequestDelegate> delegateContext;
+        private Mock<IHttpContextFactory> httpContextFactory;
         private DefaultHttpContext httpContext;
         private RPCMiddleware middleware;
         private HttpResponseFeature response;
         private FeatureCollection featureCollection;
         private HttpRequestFeature request;
+        private RpcSettings rpcSettings;
 
         public RPCMiddlewareTest()
         {
-            this.httpContext = new DefaultHttpContext();
             this.authorization = new Mock<IRPCAuthorization>();
             this.delegateContext = new Mock<RequestDelegate>();
 
@@ -34,7 +38,19 @@ namespace Stratis.Bitcoin.Features.RPC.Tests
             this.response.Body = new MemoryStream();
             this.featureCollection = new FeatureCollection();
 
-            this.middleware = new RPCMiddleware(this.delegateContext.Object, this.authorization.Object, this.LoggerFactory.Object, new Mock<IHttpContextFactory>().Object, new DataFolder(string.Empty));
+            this.httpContextFactory = new Mock<IHttpContextFactory>();
+            this.httpContextFactory.Setup(f => f.Create(It.IsAny<FeatureCollection>())).Returns((FeatureCollection f) => {
+                DefaultHttpContext newHttpContext = new DefaultHttpContext();
+                newHttpContext.Initialize(f);
+
+                return newHttpContext;
+            });
+
+            var nodeSettings = new NodeSettings(new StratisRegTest());
+
+            this.rpcSettings = new RpcSettings(nodeSettings);
+
+            this.middleware = new RPCMiddleware(this.delegateContext.Object, this.authorization.Object, this.LoggerFactory.Object, this.httpContextFactory.Object, new DataFolder(string.Empty), this.rpcSettings);
         }
 
         [Fact]
@@ -140,8 +156,9 @@ namespace Stratis.Bitcoin.Features.RPC.Tests
             this.httpContext.Response.Body.Position = 0;
             using (var reader = new StreamReader(this.httpContext.Response.Body))
             {
-                string expected = string.Format("{{{0}  \"result\": null,{0}  \"error\": {{{0}    \"code\": -1,{0}    \"message\": \"Argument error: Name is required.\"{0}  }}{0}}}", Environment.NewLine);
-                Assert.Equal(expected, reader.ReadToEnd());
+                JToken expected = JToken.Parse(@"{""result"": null, ""error"": {""code"": -1, ""message"": ""Argument error: Name is required.""}}");
+                JToken actual = JToken.Parse(reader.ReadToEnd());
+                actual.Should().BeEquivalentTo(expected);
                 Assert.Equal(StatusCodes.Status200OK, this.httpContext.Response.StatusCode);
             }
         }
@@ -154,14 +171,25 @@ namespace Stratis.Bitcoin.Features.RPC.Tests
             this.SetupValidAuthorization();
             this.InitializeFeatureContext();
 
-            this.middleware.InvokeAsync(this.httpContext).Wait();
-
-            this.httpContext.Response.Body.Position = 0;
-            using (var reader = new StreamReader(this.httpContext.Response.Body))
+            using (this.httpContext.Request.Body = new MemoryStream())
             {
-                string expected = string.Format("{{{0}  \"result\": null,{0}  \"error\": {{{0}    \"code\": -1,{0}    \"message\": \"Argument error: Int x is invalid format.\"{0}  }}{0}}}", Environment.NewLine);
-                Assert.Equal(expected, reader.ReadToEnd());
-                Assert.Equal(StatusCodes.Status200OK, this.httpContext.Response.StatusCode);
+                byte[] payloadBuffor = Encoding.UTF8.GetBytes(@"{""method"": ""name doesn't matter""}");
+                this.httpContext.Request.Body.Write(payloadBuffor);
+                this.httpContext.Request.Body.Flush();
+                this.httpContext.Request.Body.Position = 0;
+
+                this.httpContext.Request.ContentLength = payloadBuffor.Length;
+
+                this.middleware.InvokeAsync(this.httpContext).Wait();
+
+                this.httpContext.Response.Body.Position = 0;
+                using (var reader = new StreamReader(this.httpContext.Response.Body))
+                {
+                    JToken expected = JToken.Parse(@"{""result"": null, ""error"": {""code"": -1, ""message"": ""Argument error: Int x is invalid format.""}}");
+                    JToken actual = JToken.Parse(reader.ReadToEnd());
+                    actual.Should().BeEquivalentTo(expected);
+                    Assert.Equal(StatusCodes.Status200OK, this.httpContext.Response.StatusCode);
+                }
             }
         }
 
@@ -177,8 +205,9 @@ namespace Stratis.Bitcoin.Features.RPC.Tests
             this.httpContext.Response.Body.Position = 0;
             using (var reader = new StreamReader(this.httpContext.Response.Body))
             {
-                string expected = string.Format("{{{0}  \"result\": null,{0}  \"error\": {{{0}    \"code\": -32601,{0}    \"message\": \"Method not found\"{0}  }}{0}}}", Environment.NewLine);
-                Assert.Equal(expected, reader.ReadToEnd());
+                JToken expected = JToken.Parse(@"{""result"": null, ""error"": {""code"": -32601, ""message"": ""Method not found""}}");
+                JToken actual = JToken.Parse(reader.ReadToEnd());
+                actual.Should().BeEquivalentTo(expected);
                 Assert.Equal(StatusCodes.Status404NotFound, this.httpContext.Response.StatusCode);
             }
         }
@@ -195,8 +224,10 @@ namespace Stratis.Bitcoin.Features.RPC.Tests
             this.httpContext.Response.Body.Position = 0;
             using (var reader = new StreamReader(this.httpContext.Response.Body))
             {
-                string expected = string.Format("{{{0}  \"result\": null,{0}  \"error\": {{{0}    \"code\": -32603,{0}    \"message\": \"Internal error\"{0}  }}{0}}}", Environment.NewLine);
-                Assert.Equal(expected, reader.ReadToEnd());
+                JToken expected = JToken.Parse(@"{""result"": null, ""error"": { ""code"": -32603, ""message"": ""Internal error"" }}");
+                JToken actual = JToken.Parse(reader.ReadToEnd());
+                actual.Should().BeEquivalentTo(expected);
+
                 Assert.Equal(StatusCodes.Status500InternalServerError, this.httpContext.Response.StatusCode);
                 this.AssertLog(this.Logger, LogLevel.Error, "Internal error while calling RPC Method");
             }
@@ -210,15 +241,27 @@ namespace Stratis.Bitcoin.Features.RPC.Tests
             this.SetupValidAuthorization();
             this.InitializeFeatureContext();
 
-            this.middleware.InvokeAsync(this.httpContext).Wait();
-
-            this.httpContext.Response.Body.Position = 0;
-            using (var reader = new StreamReader(this.httpContext.Response.Body))
+            using (this.httpContext.Request.Body = new MemoryStream())
             {
-                string expected = string.Format("{{{0}  \"result\": null,{0}  \"error\": {{{0}    \"code\": -32603,{0}    \"message\": \"Internal error\"{0}  }}{0}}}", Environment.NewLine);
-                Assert.Equal(expected, reader.ReadToEnd());
-                Assert.Equal(StatusCodes.Status200OK, this.httpContext.Response.StatusCode);
-                this.AssertLog<InvalidOperationException>(this.Logger, LogLevel.Error, "Operation not valid.", "Internal error while calling RPC Method");
+                byte[] payloadBuffor = Encoding.UTF8.GetBytes(@"{""method"": ""name doesn't matter""}");
+                this.httpContext.Request.Body.Write(payloadBuffor);
+                this.httpContext.Request.Body.Flush();
+                this.httpContext.Request.Body.Position = 0;
+
+                this.httpContext.Request.ContentLength = payloadBuffor.Length;
+
+                this.middleware.InvokeAsync(this.httpContext).Wait();
+
+                this.httpContext.Response.Body.Position = 0;
+                using (var reader = new StreamReader(this.httpContext.Response.Body))
+                {
+                    JToken expected = JToken.Parse(@"{""result"": null, ""error"": {""code"": -32603,""message"": ""Internal error""}}");
+                    JToken actual = JToken.Parse(reader.ReadToEnd());
+                    actual.Should().BeEquivalentTo(expected);
+
+                    Assert.Equal(StatusCodes.Status200OK, this.httpContext.Response.StatusCode);
+                    this.AssertLog<InvalidOperationException>(this.Logger, LogLevel.Error, "Operation not valid.", "Internal error while calling RPC Method");
+                }
             }
         }
 

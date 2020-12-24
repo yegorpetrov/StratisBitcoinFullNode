@@ -522,7 +522,7 @@ namespace Stratis.SmartContracts.IntegrationTests
             Assert.NotNull(this.node1.GetCode(response.NewContractAddress));
             uint160 contractAddress = this.addressGenerator.GenerateAddress(response.TransactionId, 0);
 
-            ulong amount = 123;
+            ulong amount = 25;
 
             BuildCallContractTransactionResponse callResponse = this.node1.SendCallContractTransaction(
                 nameof(ReceiveFundsTest.MethodReceiveFunds),
@@ -611,6 +611,7 @@ namespace Stratis.SmartContracts.IntegrationTests
             // Invoke call which sends 123 to self. Balance should remain the same.
             BuildCallContractTransactionResponse callResponse = this.node1.SendCallContractTransaction(
                 nameof(ReceiveFundsTest.TransferFunds),
+
                 response.NewContractAddress,
                 0,
                 parameters);

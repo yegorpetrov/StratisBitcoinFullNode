@@ -7,7 +7,6 @@ using NBitcoin;
 using Stratis.Bitcoin.Configuration;
 using Stratis.Bitcoin.Configuration.Logging;
 using Stratis.Bitcoin.Configuration.Settings;
-using Stratis.Bitcoin.Consensus;
 using Stratis.Bitcoin.Features.Consensus.CoinViews;
 using Stratis.Bitcoin.Features.Consensus.ProvenBlockHeaders;
 using Stratis.Bitcoin.Networks;
@@ -38,7 +37,7 @@ namespace Stratis.Bitcoin.Features.Consensus.Tests.CoinViews
             this.dataFolder = TestBase.CreateDataFolder(this);
             this.dateTimeProvider = new DateTimeProvider();
             this.loggerFactory = new ExtendedLoggerFactory();
-            this.nodeStats = new NodeStats(this.dateTimeProvider);
+            this.nodeStats = new NodeStats(this.dateTimeProvider, this.loggerFactory);
 
             this.dbreezeCoinview = new DBreezeCoinView(this.network, this.dataFolder, this.dateTimeProvider, this.loggerFactory, this.nodeStats, new DBreezeSerializer(this.network.Consensus.ConsensusFactory));
             this.dbreezeCoinview.Initialize();
@@ -49,8 +48,7 @@ namespace Stratis.Bitcoin.Features.Consensus.Tests.CoinViews
 
             this.rewindDataIndexCache = new RewindDataIndexCache(this.dateTimeProvider, this.network);
 
-            var consensusSettings = new ConsensusSettings(new NodeSettings(this.network));
-            this.cachedCoinView = new CachedCoinView(this.dbreezeCoinview, this.dateTimeProvider, this.loggerFactory, this.nodeStats, new Checkpoints(this.network, consensusSettings), this.stakeChainStore, this.rewindDataIndexCache);
+            this.cachedCoinView = new CachedCoinView(this.dbreezeCoinview, this.dateTimeProvider, this.loggerFactory, this.nodeStats, new ConsensusSettings(new NodeSettings(this.network)), this.stakeChainStore, this.rewindDataIndexCache);
 
             this.rewindDataIndexCache.Initialize(this.chainIndexer.Height, this.cachedCoinView);
 
@@ -96,7 +94,7 @@ namespace Stratis.Bitcoin.Features.Consensus.Tests.CoinViews
                 List<OutPoint> txPointsToSpend = txPoints.Take(txPoints.Count / 2).ToList();
 
                 // First spend in cached coinview
-                FetchCoinsResponse response = this.cachedCoinView.FetchCoins(new[] {txId});
+                FetchCoinsResponse response = this.cachedCoinView.FetchCoins(new[] { txId });
                 Assert.Single(response.UnspentOutputs);
 
                 UnspentOutputs coins = response.UnspentOutputs[0];
@@ -200,7 +198,7 @@ namespace Stratis.Bitcoin.Features.Consensus.Tests.CoinViews
                 uint256 txId = outPointsGroup.Key;
                 List<uint> availableIndexes = outPointsGroup.Select(x => x.N).ToList();
 
-                FetchCoinsResponse result = this.cachedCoinView.FetchCoins(new[] {txId});
+                FetchCoinsResponse result = this.cachedCoinView.FetchCoins(new[] { txId });
                 TxOut[] outputsArray = result.UnspentOutputs[0].Outputs;
 
                 // Check expected coins are present.

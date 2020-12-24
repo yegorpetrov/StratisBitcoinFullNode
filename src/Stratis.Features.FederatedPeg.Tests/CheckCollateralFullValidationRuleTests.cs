@@ -7,10 +7,8 @@ using Stratis.Bitcoin.Consensus;
 using Stratis.Bitcoin.Consensus.Rules;
 using Stratis.Bitcoin.Features.PoA;
 using Stratis.Bitcoin.Interfaces;
-using Stratis.Bitcoin.Networks;
 using Stratis.Bitcoin.Utilities;
-using Stratis.Features.FederatedPeg.Collateral;
-using Stratis.Features.FederatedPeg.CounterChain;
+using Stratis.Features.Collateral;
 using Xunit;
 
 namespace Stratis.Features.FederatedPeg.Tests
@@ -25,8 +23,6 @@ namespace Stratis.Features.FederatedPeg.Tests
 
         private readonly Mock<ISlotsManager> slotsManagerMock;
 
-        private readonly CounterChainNetworkWrapper counterChainNetworkWrapper;
-
         private readonly RuleContext ruleContext;
 
         public CheckCollateralFullValidationRuleTests()
@@ -34,12 +30,11 @@ namespace Stratis.Features.FederatedPeg.Tests
             this.ibdMock = new Mock<IInitialBlockDownloadState>();
             this.collateralCheckerMock = new Mock<ICollateralChecker>();
             this.slotsManagerMock = new Mock<ISlotsManager>();
-            this.counterChainNetworkWrapper = new CounterChainNetworkWrapper(Networks.Stratis.Mainnet());
 
             this.ibdMock.Setup(x => x.IsInitialBlockDownload()).Returns(false);
             this.slotsManagerMock
                 .Setup(x => x.GetFederationMemberForTimestamp(It.IsAny<uint>(), null))
-                .Returns(new CollateralFederationMember(new Key().PubKey, new Money(1), "addr1"));
+                .Returns(new CollateralFederationMember(new Key().PubKey, false, new Money(1), "addr1"));
 
             this.ruleContext = new RuleContext(new ValidationContext(), DateTimeOffset.Now);
             this.ruleContext.ValidationContext.BlockToValidate = new Block(new BlockHeader() { Time = 5234 });
@@ -47,14 +42,14 @@ namespace Stratis.Features.FederatedPeg.Tests
             Block block = this.ruleContext.ValidationContext.BlockToValidate;
             block.AddTransaction(new Transaction());
 
-            CollateralHeightCommitmentEncoder encoder = new CollateralHeightCommitmentEncoder();
+            var encoder = new CollateralHeightCommitmentEncoder();
 
             byte[] encodedHeight = encoder.EncodeWithPrefix(1000);
 
             var votingOutputScript = new Script(OpcodeType.OP_RETURN, Op.GetPushOp(encodedHeight));
             block.Transactions[0].AddOutput(Money.Zero, votingOutputScript);
 
-            this.rule = new CheckCollateralFullValidationRule(this.ibdMock.Object, this.collateralCheckerMock.Object, this.slotsManagerMock.Object, new Mock<IDateTimeProvider>().Object, new PoANetwork(), this.counterChainNetworkWrapper);
+            this.rule = new CheckCollateralFullValidationRule(this.ibdMock.Object, this.collateralCheckerMock.Object, this.slotsManagerMock.Object, new Mock<IDateTimeProvider>().Object, new PoANetwork());
             this.rule.Logger = new ExtendedLoggerFactory().CreateLogger(this.rule.GetType().FullName);
             this.rule.Initialize();
         }

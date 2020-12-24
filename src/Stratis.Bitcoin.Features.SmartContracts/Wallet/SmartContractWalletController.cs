@@ -19,10 +19,10 @@ using Stratis.Bitcoin.Utilities.ModelStateErrors;
 using Stratis.SmartContracts.CLR;
 using Stratis.SmartContracts.Core;
 using Stratis.SmartContracts.Core.Receipts;
-using State = Stratis.Bitcoin.Features.Wallet.Broadcasting.State;
 
 namespace Stratis.Bitcoin.Features.SmartContracts.Wallet
 {
+    [ApiVersion("1")]
     [Route("api/[controller]")]
     public sealed class SmartContractWalletController : Controller
     {
@@ -90,8 +90,12 @@ namespace Stratis.Bitcoin.Features.SmartContracts.Wallet
         /// <param name="walletName">The name of the wallet to retrieve a smart contract account address for.</param>
         /// 
         /// <returns>A smart contract account address to use for the wallet.</returns>
+        /// <response code="200">Returns account addresses</response>
+        /// <response code="400">Wallet name not provided or unexpected exception occurred</response>
         [Route("account-addresses")]
         [HttpGet]
+        [ProducesResponseType((int)HttpStatusCode.OK)]
+        [ProducesResponseType((int)HttpStatusCode.BadRequest)]
         public IActionResult GetAccountAddresses(string walletName)
         {
             if (string.IsNullOrWhiteSpace(walletName))
@@ -131,8 +135,10 @@ namespace Stratis.Bitcoin.Features.SmartContracts.Wallet
         /// <param name="walletName">The address at which to retrieve the balance.</param>
         /// 
         /// <returns>The balance at a specific wallet address in STRAT (or the sidechain coin).</returns>
+        /// <response code="200">Returns address balance</response>
         [Route("address-balance")]
         [HttpGet]
+        [ProducesResponseType((int)HttpStatusCode.OK)]
         public IActionResult GetAddressBalance(string address)
         {
             AddressBalance balance = this.walletManager.GetAddressBalance(address);
@@ -154,29 +160,35 @@ namespace Stratis.Bitcoin.Features.SmartContracts.Wallet
         /// <param name="walletName">The name of the wallet holding the address.</param>
         /// <param name="address">The address to retrieve the history for.</param>
         /// <returns>A list of smart contract create and call transaction items as well as transaction items at a specific wallet address.</returns>
+        /// <response code="200">Returns transaction history</response>
+        /// <response code="400">Invalid request or unexpected exception occurred</response>
+        /// <response code="500">Request is null</response>
         [Route("history")]
         [HttpGet]
-        public IActionResult GetHistory(string walletName, string address)
+        [ProducesResponseType((int)HttpStatusCode.OK)]
+        [ProducesResponseType((int)HttpStatusCode.BadRequest)]
+        [ProducesResponseType((int)HttpStatusCode.InternalServerError)]
+        public IActionResult GetHistory(GetHistoryRequest request)
         {
-            if (string.IsNullOrWhiteSpace(walletName))
+            if (string.IsNullOrWhiteSpace(request.WalletName))
                 return ErrorHelpers.BuildErrorResponse(HttpStatusCode.BadRequest, "No wallet name", "No wallet name provided");
 
-            if (string.IsNullOrWhiteSpace(address))
+            if (string.IsNullOrWhiteSpace(request.Address))
                 return ErrorHelpers.BuildErrorResponse(HttpStatusCode.BadRequest, "No address", "No address provided");
 
             try
             {
                 var transactionItems = new List<ContractTransactionItem>();
 
-                HdAccount account = this.walletManager.GetAccounts(walletName).First();
+                HdAccount account = this.walletManager.GetAccounts(request.WalletName).First();
 
                 // Get a list of all the transactions found in an account (or in a wallet if no account is specified), with the addresses associated with them.
-                IEnumerable<AccountHistory> accountsHistory = this.walletManager.GetHistory(walletName, account.Name);
+                IEnumerable<AccountHistory> accountsHistory = this.walletManager.GetHistory(request.WalletName, account.Name);
 
                 // Wallet manager returns only 1 when an account name is specified.
                 AccountHistory accountHistory = accountsHistory.First();
 
-                List<FlatHistory> items = accountHistory.History.Where(x => x.Address.Address == address).ToList();
+                List<FlatHistory> items = accountHistory.History.Where(x => x.Address.Address == request.Address).ToList();
 
                 // Represents a sublist of transactions associated with receive addresses + a sublist of already spent transactions associated with change addresses.
                 // In effect, we filter out 'change' transactions that are not spent, as we don't want to show these in the history.
@@ -192,6 +204,8 @@ namespace Stratis.Bitcoin.Features.SmartContracts.Wallet
                     .Where(item => item.Transaction.SpendingDetails != null)
                     .Where(item => item.Transaction.SpendingDetails.Payments.Any(x => x.DestinationScriptPubKey.IsSmartContractExec()))
                     .GroupBy(item => item.Transaction.SpendingDetails.TransactionId)
+                    .Skip(request.Skip ?? 0)
+                    .Take(request.Take ?? history.Count)
                     .Select(g => new
                     {
                         TransactionId = g.Key,
@@ -202,21 +216,19 @@ namespace Stratis.Bitcoin.Features.SmartContracts.Wallet
                     })
                     .ToList();
 
-                foreach (var scTransaction in scTransactions)
+                // Get all receipts in one transaction
+                IList<Receipt> receipts = this.receiptRepository.RetrieveMany(scTransactions.Select(x => x.TransactionId).ToList());
+
+                for (int i = 0; i < scTransactions.Count; i++)
                 {
-                    // Consensus rules state that each transaction can have only one smart contract exec output, so FirstOrDefault is correct.
-                    PaymentDetails scPayment = scTransaction.Outputs?.FirstOrDefault(x => x.DestinationScriptPubKey.IsSmartContractExec());
+                    var scTransaction = scTransactions[i];
+                    Receipt receipt = receipts[i];
 
-                    if (scPayment == null)
-                        continue;
+                    // Consensus rules state that each transaction can have only one smart contract exec output.
+                    PaymentDetails scPayment = scTransaction.Outputs.First(x => x.DestinationScriptPubKey.IsSmartContractExec());
 
-                    Receipt receipt = this.receiptRepository.Retrieve(scTransaction.TransactionId);
-
+                    // This will always give us a value - the transaction has to be serializable to get past consensus.
                     Result<ContractTxData> txDataResult = this.callDataSerializer.Deserialize(scPayment.DestinationScriptPubKey.ToBytes());
-
-                    if (txDataResult.IsFailure)
-                        continue;
-
                     ContractTxData txData = txDataResult.Value;
 
                     // If the receipt is not available yet, we don't know how much gas was consumed so use the full gas budget.
@@ -268,8 +280,12 @@ namespace Stratis.Bitcoin.Features.SmartContracts.Wallet
         /// 
         /// <returns>A hash of the transaction used to create the smart contract. The result of the transaction broadcast is not returned,
         /// and you should check for a transaction receipt to see if it was successful.</returns>
+        /// <response code="200">Returns build transaction response</response>
+        /// <response code="400">Invalid request, failed to build transaction, or could not broadcast transaction</response>
         [Route("create")]
         [HttpPost]
+        [ProducesResponseType((int)HttpStatusCode.OK)]
+        [ProducesResponseType((int)HttpStatusCode.BadRequest)]
         public IActionResult Create([FromBody] BuildCreateContractTransactionRequest request)
         {
             if (!this.ModelState.IsValid)
@@ -278,7 +294,7 @@ namespace Stratis.Bitcoin.Features.SmartContracts.Wallet
             BuildCreateContractTransactionResponse response = this.smartContractTransactionService.BuildCreateTx(request);
 
             if (!response.Success)
-                return this.BadRequest(this.Json(response));
+                return ErrorHelpers.BuildErrorResponse(HttpStatusCode.BadRequest, response.Message, string.Empty);
 
             Transaction transaction = this.network.CreateTransaction(response.Hex);
 
@@ -287,7 +303,7 @@ namespace Stratis.Bitcoin.Features.SmartContracts.Wallet
             // Check if transaction was actually added to a mempool.
             TransactionBroadcastEntry transactionBroadCastEntry = this.broadcasterManager.GetTransaction(transaction.GetHash());
 
-            if (transactionBroadCastEntry?.State == State.CantBroadcast)
+            if (transactionBroadCastEntry?.TransactionBroadcastState == TransactionBroadcastState.CantBroadcast)
             {
                 this.logger.LogError("Exception occurred: {0}", transactionBroadCastEntry.ErrorMessage);
                 return ErrorHelpers.BuildErrorResponse(HttpStatusCode.BadRequest, transactionBroadCastEntry.ErrorMessage, "Transaction Exception");
@@ -306,16 +322,21 @@ namespace Stratis.Bitcoin.Features.SmartContracts.Wallet
         ///
         /// <returns>The transaction used to call a smart contract method. The result of the transaction broadcast is not returned,
         /// and you should check for a transaction receipt to see if it was successful.</returns>
+        /// <response code="200">Returns build transaction response</response>
+        /// <response code="400">Invalid request, failed to build transaction, or could not broadcast transaction</response>
         [Route("call")]
         [HttpPost]
+        [ProducesResponseType((int)HttpStatusCode.OK)]
+        [ProducesResponseType((int)HttpStatusCode.BadRequest)]
         public IActionResult Call([FromBody] BuildCallContractTransactionRequest request)
         {
             if (!this.ModelState.IsValid)
                 return ModelStateErrors.BuildErrorResponse(this.ModelState);
 
             BuildCallContractTransactionResponse response = this.smartContractTransactionService.BuildCallTx(request);
+
             if (!response.Success)
-                return this.BadRequest(this.Json(response));
+                return ErrorHelpers.BuildErrorResponse(HttpStatusCode.BadRequest, response.Message, string.Empty);
 
             Transaction transaction = this.network.CreateTransaction(response.Hex);
 
@@ -324,7 +345,7 @@ namespace Stratis.Bitcoin.Features.SmartContracts.Wallet
             // Check if transaction was actually added to a mempool.
             TransactionBroadcastEntry transactionBroadCastEntry = this.broadcasterManager.GetTransaction(transaction.GetHash());
 
-            if (transactionBroadCastEntry?.State == State.CantBroadcast)
+            if (transactionBroadCastEntry?.TransactionBroadcastState == TransactionBroadcastState.CantBroadcast)
             {
                 this.logger.LogError("Exception occurred: {0}", transactionBroadCastEntry.ErrorMessage);
                 return ErrorHelpers.BuildErrorResponse(HttpStatusCode.BadRequest, transactionBroadCastEntry.ErrorMessage, "Transaction Exception");
@@ -342,8 +363,14 @@ namespace Stratis.Bitcoin.Features.SmartContracts.Wallet
         /// 
         /// <returns>A model of the transaction which the Broadcast Manager broadcasts. The result of the transaction broadcast is not returned,
         /// and you should check for a transaction receipt to see if it was successful.</returns>
+        /// <response code="200">Returns the broadcast transaction</response>
+        /// <response code="400">Invalid request, failed to broadcast transaction or unexpected exception occurred</response>
+        /// <response code="500">Request is null, or no peers are connected</response>
         [Route("send-transaction")]
         [HttpPost]
+        [ProducesResponseType((int)HttpStatusCode.OK)]
+        [ProducesResponseType((int)HttpStatusCode.BadRequest)]
+        [ProducesResponseType((int)HttpStatusCode.InternalServerError)]
         public IActionResult SendTransaction([FromBody] SendTransactionRequest request)
         {
             Guard.NotNull(request, nameof(request));

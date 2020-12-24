@@ -16,6 +16,7 @@ namespace Stratis.Bitcoin.Features.Miner.Controllers
     /// <summary>
     /// RPC controller for calls related to PoW mining and PoS minting.
     /// </summary>
+    [ApiVersion("1")]
     [Controller]
     public class MiningRpcController : FeatureController
     {
@@ -71,6 +72,29 @@ namespace Stratis.Bitcoin.Features.Miner.Controllers
             HdAddress address = this.walletManager.GetUnusedAddress(accountReference);
 
             List<uint256> res = this.powMining.GenerateBlocks(new ReserveScript(address.Pubkey), (ulong)blockCount, int.MaxValue);
+            return res;
+        }
+
+        /// <summary>
+        /// Tries to mine one or more blocks, with their resulting rewards being assigned to a given addess scriptPubKey.
+        /// </summary>
+        /// <param name="blockCount">Number of blocks to mine.</param>
+        /// /// <param name="address">The address that block rewards should be assigned to, in base58 format.</param>
+        /// <returns>List of block header hashes of newly mined blocks.</returns>
+        /// <remarks>It is possible that less than the required number of blocks will be mined because the generating function only
+        /// tries all possible header nonces values.</remarks>
+        [ActionName("generatetoaddress")]
+        [ActionDescription("Tries to mine a given number of blocks to a specified address, and returns a list of block header hashes.")]
+        public List<uint256> GenerateToAddress(int blockCount, string address)
+        {
+            if (blockCount <= 0)
+            {
+                throw new RPCServerException(RPCErrorCode.RPC_INVALID_REQUEST, "The number of blocks to mine must be higher than zero.");
+            }
+
+            var parsedAddress = BitcoinAddress.Create(address, this.Network);
+
+            List<uint256> res = this.powMining.GenerateBlocks(new ReserveScript(parsedAddress.ScriptPubKey), (ulong)blockCount, int.MaxValue);
             return res;
         }
 

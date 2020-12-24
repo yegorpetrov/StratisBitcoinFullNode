@@ -93,9 +93,10 @@ namespace Stratis.Bitcoin.Networks
 
             var bip9Deployments = new BitcoinBIP9Deployments
             {
-                [BitcoinBIP9Deployments.TestDummy] = new BIP9DeploymentsParameters(28, 1199145601, 1230767999),
-                [BitcoinBIP9Deployments.CSV] = new BIP9DeploymentsParameters(0, 1483228800, 1517356801),
-                [BitcoinBIP9Deployments.Segwit] = new BIP9DeploymentsParameters(1, 1483228800, 1517356801)
+                // 6048 = 75% of 8064
+                [BitcoinBIP9Deployments.TestDummy] = new BIP9DeploymentsParameters("TestDummy", 28, 1199145601, 1230767999, 6048),
+                [BitcoinBIP9Deployments.CSV] = new BIP9DeploymentsParameters("CSV", 0, 1483228800, 1517356801, 6048),
+                [BitcoinBIP9Deployments.Segwit] = new BIP9DeploymentsParameters("Segwit", 1, 1483228800, 1517356801, 6048)
             };
 
             this.Consensus = new NBitcoin.Consensus(
@@ -109,7 +110,6 @@ namespace Stratis.Bitcoin.Networks
                 majorityWindow: 1000,
                 buriedDeployments: buriedDeployments,
                 bip34Hash: new uint256("fa09d204a83a768ed5a7c8d441fa62f2043abf420cff1226c7b4329aeb9d51cf"),
-                ruleChangeActivationThreshold: 6048, // 75% of 8064,
                 minerConfirmationWindow: 8064, // nPowTargetTimespan / nPowTargetSpacing
                 maxReorgLength: 0,
                 defaultAssumeValid: new uint256("0xa601455787cb65ffc325dda4751a99cf01d1567799ec4b04f45bb05f9ef0cbde"), // 1599435

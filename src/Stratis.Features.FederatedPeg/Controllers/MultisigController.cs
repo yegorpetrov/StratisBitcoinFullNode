@@ -1,11 +1,9 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using NBitcoin;
-using Stratis.Bitcoin.Features.Wallet;
 using Stratis.Bitcoin.Features.Wallet.Models;
 using Stratis.Bitcoin.Utilities;
 using Stratis.Bitcoin.Utilities.JsonErrors;
@@ -17,6 +15,7 @@ namespace Stratis.Features.FederatedPeg.Controllers
     /// <summary>
     /// Controller providing operations on a wallet.
     /// </summary>
+    [ApiVersion("1")]
     [Route("api/[controller]")]
     public class MultisigController : Controller
     {
@@ -44,8 +43,14 @@ namespace Stratis.Features.FederatedPeg.Controllers
         /// <param name="request">An object containing the parameters used to build a transaction.</param>
         /// <returns>A JSON object including the transaction ID, the hex used to execute
         /// the transaction, and the transaction fee.</returns>
+        /// <response code="200">Returns transaction details</response>
+        /// <response code="400">Invalid request or unexpected exception occurred</response>
+        /// <response code="500">Request is null</response>
         [Route("build-transaction")]
         [HttpPost]
+        [ProducesResponseType((int)HttpStatusCode.OK)]
+        [ProducesResponseType((int)HttpStatusCode.BadRequest)]
+        [ProducesResponseType((int)HttpStatusCode.InternalServerError)]
         public IActionResult BuildTransaction([FromBody] BuildMultisigTransactionRequest request)
         {
             Guard.NotNull(request, nameof(request));

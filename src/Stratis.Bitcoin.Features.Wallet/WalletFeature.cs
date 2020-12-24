@@ -14,7 +14,6 @@ using Stratis.Bitcoin.Features.BlockStore;
 using Stratis.Bitcoin.Features.MemoryPool;
 using Stratis.Bitcoin.Features.RPC;
 using Stratis.Bitcoin.Features.Wallet.Broadcasting;
-using Stratis.Bitcoin.Features.Wallet.Controllers;
 using Stratis.Bitcoin.Features.Wallet.Interfaces;
 using Stratis.Bitcoin.Interfaces;
 using Stratis.Bitcoin.Utilities;
@@ -71,8 +70,8 @@ namespace Stratis.Bitcoin.Features.Wallet
             this.connectionManager = connectionManager;
             this.broadcasterBehavior = broadcasterBehavior;
 
-            nodeStats.RegisterStats(this.AddComponentStats, StatsType.Component);
-            nodeStats.RegisterStats(this.AddInlineStats, StatsType.Inline, 800);
+            nodeStats.RegisterStats(this.AddComponentStats, StatsType.Component, this.GetType().Name);
+            nodeStats.RegisterStats(this.AddInlineStats, StatsType.Inline, this.GetType().Name, 800);
         }
 
         /// <summary>
@@ -172,8 +171,6 @@ namespace Stratis.Bitcoin.Features.Wallet
                         services.AddSingleton<IWalletTransactionHandler, WalletTransactionHandler>();
                         services.AddSingleton<IWalletManager, WalletManager>();
                         services.AddSingleton<IWalletFeePolicy, WalletFeePolicy>();
-                        services.AddSingleton<WalletController>();
-                        services.AddSingleton<WalletRPCController>();
                         services.AddSingleton<IBroadcasterManager, FullNodeBroadcasterManager>();
                         services.AddSingleton<BroadcasterBehavior>();
                         services.AddSingleton<WalletSettings>();

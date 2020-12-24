@@ -20,6 +20,7 @@ namespace Stratis.Bitcoin.Features.Miner.Controllers
     /// <summary>
     /// API controller for calls related to PoW mining and PoS minting.
     /// </summary>
+    [ApiVersion("1")]
     [Route("api/[controller]")]
     public class MiningController : Controller
     {
@@ -57,8 +58,18 @@ namespace Stratis.Bitcoin.Features.Miner.Controllers
         /// <returns>List of block header hashes of newly mined blocks.</returns>
         /// <remarks>It is possible that less than the required number of blocks will be mined because the generating function only
         /// tries all possible header nonces values.</remarks>
+        /// <response code="200">Returns the generated block hashes</response>
+        /// <response code="400">Invalid request, or unexpected exception occurred</response>
+        /// <response code="403">Must request to mine one or more blocks</response>
+        /// <response code="405">Mining not allowed for PoS</response>
+        /// <response code="500">Request is null</response>
         [Route("generate")]
         [HttpPost]
+        [ProducesResponseType((int)HttpStatusCode.OK)]
+        [ProducesResponseType((int)HttpStatusCode.BadRequest)]
+        [ProducesResponseType((int)HttpStatusCode.Forbidden)]
+        [ProducesResponseType((int)HttpStatusCode.MethodNotAllowed)]
+        [ProducesResponseType((int)HttpStatusCode.InternalServerError)]
         public IActionResult Generate([FromBody]MiningRequest request)
         {
             Guard.NotNull(request, nameof(request));
@@ -107,8 +118,12 @@ namespace Stratis.Bitcoin.Features.Miner.Controllers
         /// <remarks>
         /// <seealso cref="https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS#Simple_requests"/>
         /// </remarks>
+        /// <response code="200">Mining stopped</response>
+        /// <response code="400">Unexpected exception occurred</response>
         [Route("stopmining")]
         [HttpPost]
+        [ProducesResponseType((int)HttpStatusCode.OK)]
+        [ProducesResponseType((int)HttpStatusCode.BadRequest)]
         public IActionResult StopMining([FromBody] bool corsProtection = true)
         {
             try
@@ -131,7 +146,7 @@ namespace Stratis.Bitcoin.Features.Miner.Controllers
         {
             const string noWalletMessage = "No wallet found";
             const string noAccountMessage = "No account found on wallet";
-            
+
 
             string walletName = this.walletManager.GetWalletsNames().FirstOrDefault();
             if (walletName == null)

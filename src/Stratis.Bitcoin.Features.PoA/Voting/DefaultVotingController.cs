@@ -12,6 +12,7 @@ using Stratis.Bitcoin.Utilities.ModelStateErrors;
 
 namespace Stratis.Bitcoin.Features.PoA.Voting
 {
+    [ApiVersion("1")]
     [Route("api/[controller]")]
     public class DefaultVotingController : Controller
     {
@@ -39,15 +40,23 @@ namespace Stratis.Bitcoin.Features.PoA.Voting
             this.logger = loggerFactory.CreateLogger(this.GetType().FullName);
         }
 
+        /// <summary>
+        /// Retrieves a list of active federation members.
+        /// </summary>
+        /// <returns>Active federation members</returns>
+        /// <response code="200">Returns the active members</response>
+        /// <response code="400">Unexpected exception occurred</response>
         [Route("fedmembers")]
         [HttpGet]
+        [ProducesResponseType((int)HttpStatusCode.OK)]
+        [ProducesResponseType((int)HttpStatusCode.BadRequest)]
         public IActionResult GetFederationMembers()
         {
             try
             {
-                List<string> hexList = this.fedManager.GetFederationMembers().Select(x => x.ToString()).ToList();
+                List<IFederationMember> federationMembers = this.fedManager.GetFederationMembers();
 
-                return this.Json(hexList);
+                return this.Json(federationMembers);
             }
             catch (Exception e)
             {
@@ -56,8 +65,16 @@ namespace Stratis.Bitcoin.Features.PoA.Voting
             }
         }
 
+        /// <summary>
+        /// Retrieves a list of active polls.
+        /// </summary>
+        /// <returns>Active polls</returns>
+        /// <response code="200">Returns the active polls</response>
+        /// <response code="400">Unexpected exception occurred</response>
         [Route("pendingpolls")]
         [HttpGet]
+        [ProducesResponseType((int)HttpStatusCode.OK)]
+        [ProducesResponseType((int)HttpStatusCode.BadRequest)]
         public IActionResult GetPendingPolls()
         {
             try
@@ -75,8 +92,16 @@ namespace Stratis.Bitcoin.Features.PoA.Voting
             }
         }
 
+        /// <summary>
+        /// Retrieves a list of finished polls.
+        /// </summary>
+        /// <returns>Finished polls</returns>
+        /// <response code="200">Returns the finished polls</response>
+        /// <response code="400">Unexpected exception occurred</response>
         [Route("finishedpolls")]
         [HttpGet]
+        [ProducesResponseType((int)HttpStatusCode.OK)]
+        [ProducesResponseType((int)HttpStatusCode.BadRequest)]
         public IActionResult GetFinishedPolls()
         {
             try
@@ -94,15 +119,23 @@ namespace Stratis.Bitcoin.Features.PoA.Voting
             }
         }
 
+        /// <summary>
+        /// Retrieves a list of whitelisted hashes.
+        /// </summary>
+        /// <returns>List of whitelisted hashes</returns>
+        /// <response code="200">Returns the hashes</response>
+        /// <response code="400">Unexpected exception occurred</response>
         [Route("whitelistedhashes")]
         [HttpGet]
+        [ProducesResponseType((int)HttpStatusCode.OK)]
+        [ProducesResponseType((int)HttpStatusCode.BadRequest)]
         public IActionResult GetWhitelistedHashes()
         {
             try
             {
-                string hashes = string.Join(Environment.NewLine, this.whitelistedHashesRepository.GetHashes().Select(x => x.ToString()).ToList());
+                IEnumerable<HashModel> hashes = this.whitelistedHashesRepository.GetHashes().Select(x => new HashModel() { Hash = x.ToString() });
 
-                return this.Ok(hashes);
+                return this.Json(hashes);
             }
             catch (Exception e)
             {
@@ -111,15 +144,35 @@ namespace Stratis.Bitcoin.Features.PoA.Voting
             }
         }
 
+        /// <summary>
+        /// Votes to add a hash to the whitelist.
+        /// </summary>
+        /// <returns>The HTTP response</returns>
+        /// <response code="200">Voted to add hash to whitelist</response>
+        /// <response code="400">Invalid request, node is not a federation member, or an unexpected exception occurred</response>
+        /// <response code="500">The request is null</response>
         [Route("schedulevote-whitelisthash")]
         [HttpPost]
+        [ProducesResponseType((int)HttpStatusCode.OK)]
+        [ProducesResponseType((int)HttpStatusCode.BadRequest)]
+        [ProducesResponseType((int)HttpStatusCode.InternalServerError)]
         public IActionResult VoteWhitelistHash([FromBody]HashModel request)
         {
             return this.VoteWhitelistRemoveHashMember(request, true);
         }
 
+        /// <summary>
+        /// Votes to remove a hash from the whitelist.
+        /// </summary>
+        /// <returns>The HTTP response</returns>
+        /// <response code="200">Voted to remove hash from whitelist</response>
+        /// <response code="400">Invalid request, node is not a federation member, or an unexpected exception occurred</response>
+        /// <response code="500">The request is null</response>
         [Route("schedulevote-removehash")]
         [HttpPost]
+        [ProducesResponseType((int)HttpStatusCode.OK)]
+        [ProducesResponseType((int)HttpStatusCode.BadRequest)]
+        [ProducesResponseType((int)HttpStatusCode.InternalServerError)]
         public IActionResult VoteRemoveHash([FromBody]HashModel request)
         {
             return this.VoteWhitelistRemoveHashMember(request, false);
@@ -154,15 +207,25 @@ namespace Stratis.Bitcoin.Features.PoA.Voting
             }
         }
 
+        /// <summary>
+        /// Retrieves the scheduled voting data.
+        /// </summary>
+        /// <returns>Scheduled voting data</returns>
+        /// <response code="200">Returns the voting data</response>
+        /// <response code="400">Unexpected exception occurred</response>
         [Route("scheduledvotes")]
         [HttpGet]
+        [ProducesResponseType((int)HttpStatusCode.OK)]
+        [ProducesResponseType((int)HttpStatusCode.BadRequest)]
         public IActionResult GetScheduledVotes()
         {
             try
             {
-                List<string> votes = this.votingManager.GetScheduledVotes().Select(x => x.Key.ToString()).ToList();
+                List<VotingData> votes = this.votingManager.GetScheduledVotes();
 
-                return this.Json(votes);
+                IEnumerable<VotingDataModel> models = votes.Select(x => new VotingDataModel(x));
+
+                return this.Json(models);
             }
             catch (Exception e)
             {

@@ -64,9 +64,7 @@ namespace NBitcoin
         public uint256 MinimumChainWork { get; }
 
         public int MinerConfirmationWindow { get; set; }
-
-        public int RuleChangeActivationThreshold { get; set; }
-
+        
         /// <inheritdoc />
         public int CoinType { get; }
 
@@ -87,16 +85,10 @@ namespace NBitcoin
         public ConsensusFactory ConsensusFactory { get; }
 
         /// <inheritdoc />
-        public List<IIntegrityValidationConsensusRule> IntegrityValidationRules { get; set; }
+        public ConsensusRules ConsensusRules { get; }
 
         /// <inheritdoc />
-        public List<IHeaderValidationConsensusRule> HeaderValidationRules { get; set; }
-
-        /// <inheritdoc />
-        public List<IPartialValidationConsensusRule> PartialValidationRules { get; set; }
-
-        /// <inheritdoc />
-        public List<IFullValidationConsensusRule> FullValidationRules { get; set; }
+        public List<Type> MempoolRules { get; set; }
 
         public bool LitecoinWorkCalculation { get; set; }
 
@@ -112,7 +104,6 @@ namespace NBitcoin
             BuriedDeploymentsArray buriedDeployments,
             IBIP9DeploymentsArray bip9Deployments,
             uint256 bip34Hash,
-            int ruleChangeActivationThreshold,
             int minerConfirmationWindow,
             uint maxReorgLength,
             uint256 defaultAssumeValid,
@@ -134,10 +125,6 @@ namespace NBitcoin
             BigInteger proofOfStakeLimitV2,
             Money proofOfStakeReward)
         {
-            this.IntegrityValidationRules = new List<IIntegrityValidationConsensusRule>();
-            this.HeaderValidationRules = new List<IHeaderValidationConsensusRule>();
-            this.PartialValidationRules = new List<IPartialValidationConsensusRule>();
-            this.FullValidationRules = new List<IFullValidationConsensusRule>();
             this.CoinbaseMaturity = coinbaseMaturity;
             this.PremineReward = premineReward;
             this.PremineHeight = premineHeight;
@@ -162,7 +149,6 @@ namespace NBitcoin
             this.HashGenesisBlock = hashGenesisBlock;
             this.MinimumChainWork = minimumChainWork;
             this.MinerConfirmationWindow = minerConfirmationWindow;
-            this.RuleChangeActivationThreshold = ruleChangeActivationThreshold;
             this.CoinType = coinType;
             this.ProofOfStakeLimit = proofOfStakeLimit;
             this.ProofOfStakeLimitV2 = proofOfStakeLimitV2;
@@ -170,6 +156,8 @@ namespace NBitcoin
             this.IsProofOfStake = isProofOfStake;
             this.DefaultAssumeValid = defaultAssumeValid;
             this.ConsensusFactory = consensusFactory;
+            this.ConsensusRules = new ConsensusRules();
+            this.MempoolRules = new List<Type>();
         }
     }
 }

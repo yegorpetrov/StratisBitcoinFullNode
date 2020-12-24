@@ -1,8 +1,8 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Data;
 using System.IO;
 using System.Linq;
-using System.Reflection;
-using System.Text.RegularExpressions;
 using NBitcoin;
 using NBitcoin.DataEncoders;
 using Stratis.Bitcoin.Configuration;
@@ -10,7 +10,6 @@ using Stratis.Bitcoin.Features.PoA;
 using Stratis.Bitcoin.Features.SmartContracts.PoA;
 using Stratis.Bitcoin.Networks;
 using Stratis.Sidechains.Networks;
-using Xunit.Sdk;
 
 namespace FederationSetup
 {
@@ -24,6 +23,8 @@ namespace FederationSetup
         private const string SwitchMineGenesisBlock = "g";
         private const string SwitchGenerateFedPublicPrivateKeys = "p";
         private const string SwitchGenerateMultiSigAddresses = "m";
+        private const string SwitchGenerateRecoveryTransaction = "r";
+        private const string SwitchStraxRecoveryTransaction = "x";
         private const string SwitchMenu = "menu";
         private const string SwitchExit = "exit";
 
@@ -103,6 +104,16 @@ namespace FederationSetup
                     HandleSwitchGenerateMultiSigAddressesCommand(args);
                     break;
                 }
+                case SwitchGenerateRecoveryTransaction:
+                {
+                    HandleSwitchGenerateFundsRecoveryTransaction(args);
+                    break;
+                }
+                case SwitchStraxRecoveryTransaction:
+                {
+                    HandleSwitchGenerateFundsRecoveryTransaction(args, true);
+                    break;
+                }
             }
         }
 
@@ -174,12 +185,29 @@ namespace FederationSetup
             FederationSetup.OutputSuccess();
         }
 
+        private static void ConfirmArguments(TextFileConfiguration config, params string[] args)
+        {
+            var missing = new Dictionary<string, string>();
+
+            foreach (string arg in args)
+            {
+                if (config.GetOrDefault<string>(arg, null) == null)
+                {
+                    Console.Write(arg + ": ");
+                    missing[arg] = Console.ReadLine();
+                }
+            }
+
+            new TextFileConfiguration(missing.Select(d => $"{d.Key}={d.Value}").ToArray()).MergeInto(config);
+
+            Console.WriteLine();
+        }
+
         private static void HandleSwitchGenerateMultiSigAddressesCommand(string[] args)
         {
-            if (args.Length != 4)
-                throw new ArgumentException("Please enter the exact number of argument required.");
-
             ConfigReader = new TextFileConfiguration(args);
+
+            ConfirmArguments(ConfigReader, "network", "quorum", "fedpubkeys");
 
             int quorum = GetQuorumFromArguments();
             string[] federatedPublicKeys = GetFederatedPublicKeysFromArguments();
@@ -270,9 +298,6 @@ namespace FederationSetup
             if (federatedPublicKeyCount == 0)
                 throw new ArgumentException("No federation member public keys specified.");
 
-            if (federatedPublicKeyCount % 2 == 0)
-                throw new ArgumentException("The federation must have an odd number of members.");
-
             if (federatedPublicKeyCount > 15)
                 throw new ArgumentException("The federation can only have up to fifteen members.");
 
@@ -307,6 +332,70 @@ namespace FederationSetup
             }
 
             return (mainchainNetwork, sideChainNetwork);
+        }
+
+        private static string GetDataDirFromArguments()
+        {
+            return ConfigReader.GetOrDefault<string>("datadir", Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments));
+        }
+
+        private static string GetPasswordFromArguments()
+        {
+            return ConfigReader.GetOrDefault<string>("password", null);
+        }
+
+        private static DateTime GetTransactionTimeFromArguments()
+        {
+            string strTime = ConfigReader.GetOrDefault<string>("txtime", null);
+
+            if (strTime == null)
+                throw new ArgumentException("Please enter a transaction time.");
+
+            try
+            {
+                return DateTime.Parse(strTime, null, System.Globalization.DateTimeStyles.None);
+            }
+            catch (Exception)
+            {
+                throw new ArgumentException("Please enter a valid transaction time.");
+            }
+        }
+
+        private static void HandleSwitchGenerateFundsRecoveryTransaction(string[] args, bool newFormat = false)
+        {
+            ConfigReader = new TextFileConfiguration(args);
+
+            // datadir = Directory of old federation.
+            if (newFormat)
+            {
+                ConfirmArguments(ConfigReader, "network", "datadir", "fedpubkeys", "password", "txtime");
+            }
+            else
+            {
+                ConfirmArguments(ConfigReader, "network", "datadir", "fedpubkeys", "quorum", "password", "txtime");
+            }
+
+            PayToMultiSigTemplateParameters para = new PayToMultiSigTemplateParameters()
+            {
+                PubKeys = GetFederatedPublicKeysFromArguments().Select(p => new PubKey(p)).ToArray(),
+                SignatureCount = newFormat ? 0 : GetQuorumFromArguments()
+            };
+
+            string password = GetPasswordFromArguments();
+
+            string dataDirPath = GetDataDirFromArguments();
+
+            (Network mainChain, Network sideChain) = GetMainAndSideChainNetworksFromArguments();
+
+            DateTime txTime = GetTransactionTimeFromArguments();
+
+            Console.WriteLine($"Creating funds recovery transaction for {sideChain.Name}.");
+            FundsRecoveryTransactionModel sideChainInfo = (new RecoveryTransactionCreator()).CreateFundsRecoveryTransaction(true, sideChain, mainChain, dataDirPath, para, password, txTime, newFormat);
+            sideChainInfo.DisplayInfo();
+
+            Console.WriteLine($"Creating funds recovery transaction for {mainChain.Name}.");
+            FundsRecoveryTransactionModel mainChainInfo = (new RecoveryTransactionCreator()).CreateFundsRecoveryTransaction(false, mainChain, sideChain, dataDirPath, para, password, txTime, newFormat, true);
+            mainChainInfo.DisplayInfo();
         }
     }
 }

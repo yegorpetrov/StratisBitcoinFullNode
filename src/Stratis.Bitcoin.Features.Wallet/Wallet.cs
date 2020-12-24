@@ -23,6 +23,9 @@ namespace Stratis.Bitcoin.Features.Wallet
         /// <summary>Filter for identifying normal wallet accounts.</summary>
         public static Func<HdAccount, bool> NormalAccounts = a => a.Index < SpecialPurposeAccountIndexesStart;
 
+        /// <summary>Filter for all wallet accounts.</summary>
+        public static Func<HdAccount, bool> AllAccounts = a => true;
+
         /// <summary>
         /// Initializes a new instance of the wallet.
         /// </summary>
@@ -120,16 +123,40 @@ namespace Stratis.Bitcoin.Features.Wallet
         /// Gets all the transactions in the wallet.
         /// </summary>
         /// <returns>A list of all the transactions in the wallet.</returns>
-        public IEnumerable<TransactionData> GetAllTransactions()
+        public IEnumerable<TransactionData> GetAllTransactions(Func<HdAccount, bool> accountFilter = null)
         {
-            List<HdAccount> accounts = this.GetAccounts().ToList();
+            List<HdAccount> accounts = this.GetAccounts(accountFilter).ToList();
 
-            foreach (TransactionData txData in accounts.SelectMany(x => x.ExternalAddresses).SelectMany(x => x.Transactions))
+            // First we iterate normal accounts
+            foreach (TransactionData txData in accounts.Where(a => a.IsNormalAccount()).SelectMany(x => x.ExternalAddresses).SelectMany(x => x.Transactions))
+            {
+                // If this is a cold coin stake UTXO, we won't return it for a normal account.
+                if (txData.IsColdCoinStake.HasValue && txData.IsColdCoinStake.Value == true)
+                {
+                    continue;
+                }
+
+                yield return txData;
+            }
+
+            foreach (TransactionData txData in accounts.Where(a => a.IsNormalAccount()).SelectMany(x => x.InternalAddresses).SelectMany(x => x.Transactions))
+            {
+                // If this is a cold coin stake UTXO, we won't return it for a normal account.
+                if (txData.IsColdCoinStake.HasValue && txData.IsColdCoinStake.Value == true)
+                {
+                    continue;
+                }
+
+                yield return txData;
+            }
+
+            // Then we iterate special accounts.
+            foreach (TransactionData txData in accounts.Where(a => !a.IsNormalAccount()).SelectMany(x => x.ExternalAddresses).SelectMany(x => x.Transactions))
             {
                 yield return txData;
             }
 
-            foreach (TransactionData txData in accounts.SelectMany(x => x.InternalAddresses).SelectMany(x => x.Transactions))
+            foreach (TransactionData txData in accounts.Where(a => !a.IsNormalAccount()).SelectMany(x => x.InternalAddresses).SelectMany(x => x.Transactions))
             {
                 yield return txData;
             }
@@ -287,13 +314,29 @@ namespace Stratis.Bitcoin.Features.Wallet
         }
 
         /// <summary>
+        /// Lists all unspent transactions from all accounts in the wallet.
+        /// This is distinct from the list of spendable transactions. A transaction can be unspent but not yet spendable due to coinbase/stake maturity, for example.
+        /// </summary>
+        /// <param name="currentChainHeight">Height of the current chain, used in calculating the number of confirmations.</param>
+        /// <param name="confirmations">The number of confirmations required to consider a transaction spendable.</param>
+        /// <param name="accountFilter">An optional filter for filtering the accounts being returned.</param>
+        /// <returns>A collection of spendable outputs.</returns>
+        public IEnumerable<UnspentOutputReference> GetAllUnspentTransactions(int currentChainHeight, int confirmations = 0, Func<HdAccount, bool> accountFilter = null)
+        {
+            IEnumerable<HdAccount> accounts = this.GetAccounts(accountFilter);
+
+            // The logic for retrieving unspent transactions is almost identical to determining spendable transactions, we just don't take coinbase/stake maturity into consideration.
+            return accounts.SelectMany(x => x.GetSpendableTransactions(currentChainHeight, 0, confirmations));
+        }
+
+        /// <summary>
         /// Calculates the fee paid by the user on a transaction sent.
         /// </summary>
         /// <param name="transactionId">The transaction id to look for.</param>
         /// <returns>The fee paid.</returns>
         public Money GetSentTransactionFee(uint256 transactionId)
         {
-            List<TransactionData> allTransactions = this.GetAllTransactions().ToList();
+            List<TransactionData> allTransactions = this.GetAllTransactions(Wallet.NormalAccounts).ToList();
 
             // Get a list of all the inputs spent in this transaction.
             List<TransactionData> inputsSpentInTransaction = allTransactions.Where(t => t.SpendingDetails?.TransactionId == transactionId).ToList();
@@ -593,6 +636,15 @@ namespace Stratis.Bitcoin.Features.Wallet
         }
 
         /// <summary>
+        /// Check if the current account is a normal or special purpose one.
+        /// </summary>
+        /// <returns>True if this is a normal account (index below the SpecialPurposeAccountIndexesStart).</returns>
+        public bool IsNormalAccount()
+        {
+            return this.Index < Wallet.SpecialPurposeAccountIndexesStart;
+        }
+
+        /// <summary>
         /// Gets the first receiving address that contains no transaction.
         /// </summary>
         /// <returns>An unused address</returns>
@@ -669,15 +721,26 @@ namespace Stratis.Bitcoin.Features.Wallet
         /// <summary>
         /// Get the accounts total spendable value for both confirmed and unconfirmed UTXO.
         /// </summary>
-        public (Money ConfirmedAmount, Money UnConfirmedAmount) GetBalances()
+        public (Money ConfirmedAmount, Money UnConfirmedAmount) GetBalances(bool excludeColdStakeUtxo)
         {
             List<TransactionData> allTransactions = this.ExternalAddresses.SelectMany(a => a.Transactions)
                 .Concat(this.InternalAddresses.SelectMany(i => i.Transactions)).ToList();
 
-            long confirmed = allTransactions.Sum(t => t.GetUnspentAmount(true));
-            long total = allTransactions.Sum(t => t.GetUnspentAmount(false));
+            if (excludeColdStakeUtxo)
+            {
+                // If this is a normal account, we must exclude the cold coin stake data.
+                long confirmed = allTransactions.Where(t => t.IsColdCoinStake != true).Sum(t => t.GetUnspentAmount(true));
+                long total = allTransactions.Where(t => t.IsColdCoinStake != true).Sum(t => t.GetUnspentAmount(false));
 
-            return (confirmed, total - confirmed);
+                return (confirmed, total - confirmed);
+            }
+            else
+            {
+                long confirmed = allTransactions.Sum(t => t.GetUnspentAmount(true));
+                long total = allTransactions.Sum(t => t.GetUnspentAmount(false));
+
+                return (confirmed, total - confirmed);
+            }
         }
 
         /// <summary>
@@ -741,8 +804,10 @@ namespace Stratis.Bitcoin.Features.Wallet
             var addressesCreated = new List<HdAddress>();
             for (int i = firstNewAddressIndex; i < firstNewAddressIndex + addressesQuantity; i++)
             {
-                // Generate a new address.
+                // Retrieve the pubkey associated with the private key of this address index.
                 PubKey pubkey = HdOperations.GeneratePublicKey(this.ExtendedPubKey, i, isChange);
+
+                // Generate the P2PKH address corresponding to the pubkey.
                 BitcoinPubKeyAddress address = pubkey.GetAddress(network);
 
                 // Add the new address details to the list of addresses.
@@ -795,16 +860,33 @@ namespace Stratis.Bitcoin.Features.Wallet
                 {
                     int? confirmationCount = 0;
                     if (transactionData.BlockHeight != null)
+                    {
                         confirmationCount = countFrom >= transactionData.BlockHeight ? countFrom - transactionData.BlockHeight : 0;
+                    }
 
                     if (confirmationCount < confirmations)
+                    {
                         continue;
+                    }
 
                     bool isCoinBase = transactionData.IsCoinBase ?? false;
                     bool isCoinStake = transactionData.IsCoinStake ?? false;
 
+                    // Check if this wallet is a normal purpose wallet (not cold staking, etc).
+                    if (this.IsNormalAccount())
+                    {
+                        bool isColdCoinStake = transactionData.IsColdCoinStake ?? false;
+
+                        // Skip listing the UTXO if this is a normal wallet, and the UTXO is marked as an cold coin stake.
+                        if (isColdCoinStake)
+                        {
+                            continue;
+                        }
+                    }
+
                     // This output can unconditionally be included in the results.
-                    // Or this output is a CoinBase or CoinStake and has reached maturity.
+                    // Or this output is a ColdStake, CoinBase or CoinStake and has reached maturity.
+                    // TODO: Comment does not match the code
                     if ((!isCoinBase && !isCoinStake) || (confirmationCount > coinbaseMaturity))
                     {
                         yield return new UnspentOutputReference
@@ -837,15 +919,21 @@ namespace Stratis.Bitcoin.Features.Wallet
         public int Index { get; set; }
 
         /// <summary>
-        /// The script pub key for this address.
+        /// The P2PKH (pay-to-pubkey-hash) script pub key for this address.
         /// </summary>
+        /// <remarks>The script is of the format OP_DUP OP_HASH160 {pubkeyhash} OP_EQUALVERIFY OP_CHECKSIG</remarks>
         [JsonProperty(PropertyName = "scriptPubKey")]
         [JsonConverter(typeof(ScriptJsonConverter))]
         public Script ScriptPubKey { get; set; }
 
         /// <summary>
-        /// The script pub key for this address.
+        /// The P2PK (pay-to-pubkey) script pub key corresponding to the private key of this address.
         /// </summary>
+        /// <remarks>This is typically only used for mining, as the valid script types for mining are constrained.
+        /// Block explorers often depict the P2PKH address as the 'address' of a P2PK scriptPubKey, which is not
+        /// actually correct. A P2PK scriptPubKey does not have a defined address format.
+        /// 
+        /// The script itself is of the format: {pubkey} OP_CHECKSIG</remarks>
         [JsonProperty(PropertyName = "pubkey")]
         [JsonConverter(typeof(ScriptJsonConverter))]
         public Script Pubkey { get; set; }
@@ -898,9 +986,9 @@ namespace Stratis.Bitcoin.Features.Wallet
         /// <summary>
         /// Get the address total spendable value for both confirmed and unconfirmed UTXO.
         /// </summary>
-        public (Money confirmedAmount, Money unConfirmedAmount) GetBalances()
+        public (Money confirmedAmount, Money unConfirmedAmount) GetBalances(bool excludeColdStakeUtxo)
         {
-            List<TransactionData> allTransactions = this.Transactions.ToList();
+            List<TransactionData> allTransactions = excludeColdStakeUtxo ? this.Transactions.Where(t => t.IsColdCoinStake != true).ToList() : this.Transactions.ToList();
 
             long confirmed = allTransactions.Sum(t => t.GetUnspentAmount(true));
             long total = allTransactions.Sum(t => t.GetUnspentAmount(false));
@@ -939,6 +1027,12 @@ namespace Stratis.Bitcoin.Features.Wallet
         /// </summary>
         [JsonProperty(PropertyName = "isCoinStake", NullValueHandling = NullValueHandling.Ignore)]
         public bool? IsCoinStake { get; set; }
+
+        /// <summary>
+        /// A value indicating whether this is a coldstake transaction or not.
+        /// </summary>
+        [JsonProperty(PropertyName = "isColdCoinStake", NullValueHandling = NullValueHandling.Ignore)]
+        public bool? IsColdCoinStake { get; set; }
 
         /// <summary>
         /// The index of this scriptPubKey in the transaction it is contained.
