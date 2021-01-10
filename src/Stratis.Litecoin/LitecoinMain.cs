@@ -6,6 +6,8 @@ using System.Text;
 using NBitcoin;
 using NBitcoin.DataEncoders;
 using NBitcoin.Protocol;
+using Stratis.Bitcoin.Features.Consensus.Rules.CommonRules;
+using Stratis.Bitcoin.Features.MemoryPool.Rules;
 using Stratis.Bitcoin.Networks.Deployments;
 using Stratis.Bitcoin.Networks.Policies;
 
@@ -70,6 +72,7 @@ namespace Stratis.Bitcoin.Networks
             this.FallbackFee = 20000;
             this.MinRelayTxFee = 1000;
             this.CoinTicker = "LTC";
+            this.DefaultBanTimeSeconds = 60 * 60 * 24; // 24 Hours
 
             var consensusFactory = LitecoinConsensusFactory.Instance;
 
@@ -194,6 +197,60 @@ namespace Stratis.Bitcoin.Networks
 
             Assert(this.Consensus.HashGenesisBlock == uint256.Parse("0x12a765e31ffd4059bada1e25190f6e98c99d9714d334efa41a195a7e7e04bfe2"));
             Assert(this.Genesis.Header.HashMerkleRoot == uint256.Parse("0x97ddfbbae6be97fd6cdf3e7ca13232a3afff2353e29badfab7f73011edd4ced9"));
+
+            this.RegisterRules(this.Consensus);
+            this.RegisterMempoolRules(this.Consensus);
+        }
+
+        protected void RegisterRules(IConsensus consensus)
+        {
+            consensus.ConsensusRules
+                .Register<HeaderTimeChecksRule>()
+                .Register<CheckDifficultyPowRule>()
+                .Register<BitcoinActivationRule>()
+                .Register<BitcoinHeaderVersionRule>();
+
+            consensus.ConsensusRules
+                .Register<BlockMerkleRootRule>();
+
+            consensus.ConsensusRules
+                .Register<SetActivationDeploymentsPartialValidationRule>()
+
+                .Register<TransactionLocktimeActivationRule>() // implements BIP113
+                .Register<CoinbaseHeightActivationRule>() // implements BIP34
+                .Register<WitnessCommitmentsRule>() // BIP141, BIP144
+                .Register<BlockSizeRule>()
+
+                // rules that are inside the method CheckBlock
+                .Register<EnsureCoinbaseRule>()
+                .Register<CheckPowTransactionRule>()
+                .Register<CheckSigOpsRule>();
+
+            consensus.ConsensusRules
+                .Register<SetActivationDeploymentsFullValidationRule>()
+
+                // rules that require the store to be loaded (coinview)
+                .Register<LoadCoinviewRule>()
+                .Register<TransactionDuplicationActivationRule>() // implements BIP30
+                .Register<PowCoinviewRule>()// implements BIP68, MaxSigOps and BlockReward calculation
+                .Register<SaveCoinviewRule>();
+        }
+
+        protected void RegisterMempoolRules(IConsensus consensus)
+        {
+            consensus.MempoolRules = new List<Type>()
+            {
+                typeof(CheckConflictsMempoolRule),
+                typeof(CheckCoinViewMempoolRule),
+                typeof(CreateMempoolEntryMempoolRule),
+                typeof(CheckSigOpsMempoolRule),
+                typeof(CheckFeeMempoolRule),
+                typeof(CheckRateLimitMempoolRule),
+                typeof(CheckAncestorsMempoolRule),
+                typeof(CheckReplacementMempoolRule),
+                typeof(CheckAllInputsMempoolRule),
+                typeof(CheckTxOutDustRule)
+            };
         }
 
         protected static IEnumerable<NetworkAddress> ToSeed(Tuple<byte[], int>[] tuples)
